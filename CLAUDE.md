@@ -12,6 +12,20 @@
 
 **Rule:** Each person only modifies their own engine(s). Never mix responsibilities across owners.
 
+## CRITICAL: Branch Strategy
+
+| Member | Branch | Can Touch |
+|--------|--------|-----------|
+| **Divyansh** | `dev/divyansh` | Engine 1 + Frontend only |
+| **Siddharth** | `dev/siddharth` | Engine 2 + Engine 3 only |
+| **Annant** | `dev/annant` | Engine 4 only |
+| **Naman** | `dev/naman` | Engine 5 only |
+
+- `main` is protected — never push directly
+- Before working, the user MUST tell you which engine they're working on
+- Based on that, checkout their branch and only modify their files
+- All 4 members share this Claude account — always confirm identity/engine before coding
+
 ---
 
 ## Engine Specs

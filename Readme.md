@@ -2,11 +2,20 @@
 
 Automated equity research and valuation intelligence system.
 
-## Team
-- Sid (Financial Data Engine)
-- Naman (Valuation Engine)
-- Annant (Risk + NLP Engine)
-- Divyansh (Frontend)
+## Team & Engine Ownership
+
+| Member | Engine(s) | Branch |
+|--------|-----------|--------|
+| **Divyansh** | Engine 1 (Financial Data) + Frontend | `dev/divyansh` |
+| **Siddharth** | Engine 2 (Valuation) + Engine 3 (Risk) | `dev/siddharth` |
+| **Annant** | Engine 4 (NLP Intelligence) | `dev/annant` |
+| **Naman** | Engine 5 (Investment Memo) | `dev/naman` |
+
+## Branch Strategy
+
+- `main` — **protected**, only receives tested merges
+- `dev/<name>` — each member works exclusively on their branch
+- Never push directly to `main`. Merge via pull request after review.
 
 ## Quick Start (Codespaces)
 1. Click the green "Code" button above
@@ -16,9 +25,13 @@ Automated equity research and valuation intelligence system.
 5. Everything is installed automatically
 
 ## Run Backend
+```bash
 cd backend
 uvicorn main:app --reload --port 8000
+```
 
 ## Run Frontend
+```bash
 cd frontend
 npm run dev
+```
