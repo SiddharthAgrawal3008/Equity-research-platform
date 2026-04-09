@@ -18,6 +18,7 @@ ERRORS THIS MODULE RAISES:
     TickerNotFoundError         — symbol does not exist on any exchange
     CompanyDataUnavailableError — company exists but has no public financial data
                                   (private company, OTC-only, or pre-revenue startup)
+    DataFetchError              — network/upstream failure (timeout, proxy block, etc.)
 """
 
 from __future__ import annotations
@@ -58,6 +59,17 @@ class CompanyDataUnavailableError(Exception):
     Frontend message: "<Company Name> does not have publicly
     available financial statements. This platform covers publicly
     listed companies with at least one year of filed financials."
+    """
+
+
+class DataFetchError(Exception):
+    """
+    Raised when a network or upstream API failure prevents data retrieval.
+    This is distinct from an invalid ticker — the symbol may be valid but
+    Yahoo Finance is unreachable (timeout, rate limit, proxy block, etc.).
+
+    Frontend message: "Unable to fetch data right now. Please try again
+    in a moment."
     """
 
 
@@ -138,7 +150,15 @@ def _check_ticker_validity(yfin_ticker: yf.Ticker, symbol: str) -> None:
     try:
         info = yfin_ticker.info
     except Exception as exc:
-        # yfinance itself throws on badly formed tickers in some versions
+        exc_str = str(exc).lower()
+        # Network-level failures (proxy, timeout, connection refused) are
+        # a different problem from an invalid ticker — don't conflate them.
+        if any(word in exc_str for word in ("proxy", "connect", "timeout", "network", "ssl")):
+            raise DataFetchError(
+                "Unable to reach Yahoo Finance right now. "
+                "Please check your connection and try again."
+            ) from exc
+        # yfinance throws on badly formed / unknown tickers in some versions
         raise TickerNotFoundError(
             f"Ticker '{symbol}' not found. "
             "Please check the symbol and try again (e.g. 'AAPL', 'INFY.NS')."
