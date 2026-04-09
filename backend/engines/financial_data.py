@@ -212,7 +212,10 @@ def _check_ticker_validity(yfin_ticker: yf.Ticker, symbol: str) -> None:
         CompanyDataUnavailableError: Company has no public financial data.
         DataFetchError:              Network / rate-limit failure.
     """
-    # Stage 1: use history — far less rate-limited than .info
+    # Stage 1: use history — far less rate-limited than .info.
+    # If history is empty we cross-check with financials before concluding
+    # the ticker is invalid — on Codespaces/CI, Yahoo blocks all endpoints
+    # and returns empty DataFrames, which would cause a false TickerNotFoundError.
     try:
         hist = yfin_ticker.history(period="5d")
     except Exception as exc:
@@ -228,9 +231,22 @@ def _check_ticker_validity(yfin_ticker: yf.Ticker, symbol: str) -> None:
         ) from exc
 
     if hist.empty:
+        # Before declaring the ticker invalid, check if financials also fail.
+        # If BOTH are empty it is almost certainly a network/rate-limit block
+        # (Yahoo blocks cloud IPs, e.g. GitHub Codespaces) rather than a bad ticker.
+        financials_also_empty = yfin_ticker.financials.empty
+        if financials_also_empty:
+            raise DataFetchError(
+                f"No data could be retrieved for '{symbol}'. "
+                "This is likely because Yahoo Finance blocks requests from cloud "
+                "environments (Codespaces, CI servers). "
+                "Please run this on a local machine, or verify the ticker symbol "
+                "is correct (e.g. 'AAPL', 'INFY.NS')."
+            )
+        # History empty but financials available → delisted / no recent trading
         raise TickerNotFoundError(
-            f"Ticker '{symbol}' not found. "
-            "Please check the symbol and try again (e.g. 'AAPL', 'INFY.NS')."
+            f"Ticker '{symbol}' not found or has been delisted. "
+            "Please check the symbol and try again."
         )
 
     # Stage 2: check financials — company exists, but does it have filings?
