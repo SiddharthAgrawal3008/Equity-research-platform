@@ -23,7 +23,9 @@ ERRORS THIS MODULE RAISES:
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -121,6 +123,65 @@ def _dataframe_to_raw_dict(df: pd.DataFrame) -> dict[str, dict[str, Any]]:
     return raw
 
 
+def _fetch_info_with_retry(yfin_ticker: yf.Ticker, symbol: str, retries: int = 2) -> dict:
+    """
+    Fetch ticker.info with simple retry logic for 429 rate-limit errors.
+
+    Yahoo Finance aggressively rate-limits cloud IPs (Codespaces, CI, etc.).
+    A short wait + retry resolves the majority of transient 429s.
+
+    Args:
+        yfin_ticker: The yfinance Ticker object.
+        symbol:      Ticker symbol string (for error messages).
+        retries:     Number of retry attempts after the first failure.
+
+    Returns:
+        The info dict from yfinance.
+
+    Raises:
+        DataFetchError: If all attempts fail due to rate limiting or network issues.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            return yfin_ticker.info
+        except json.JSONDecodeError as exc:
+            # Yahoo returns an HTML error page (e.g. 429 page) instead of JSON.
+            # This is always a rate-limit or server-side issue, not a bad ticker.
+            last_exc = exc
+            if attempt < retries:
+                wait = 2 ** attempt  # 1s, 2s
+                logger.warning(
+                    "Engine 1 | fetch_info | JSON decode error for '%s' "
+                    "(likely 429), retrying in %ds (attempt %d/%d)",
+                    symbol, wait, attempt + 1, retries,
+                )
+                time.sleep(wait)
+        except Exception as exc:
+            exc_str = str(exc).lower()
+            rate_limited = "429" in exc_str or "too many" in exc_str
+            network_issue = any(w in exc_str for w in ("proxy", "connect", "timeout", "network", "ssl"))
+
+            if rate_limited or network_issue:
+                last_exc = exc
+                if attempt < retries:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        "Engine 1 | fetch_info | rate limit / network error for '%s', "
+                        "retrying in %ds (attempt %d/%d)",
+                        symbol, wait, attempt + 1, retries,
+                    )
+                    time.sleep(wait)
+            else:
+                # Non-retryable error — re-raise immediately
+                raise
+
+    raise DataFetchError(
+        "Yahoo Finance is rate-limiting this request. "
+        "Please wait a moment and try again."
+    ) from last_exc
+
+
 def _check_ticker_validity(yfin_ticker: yf.Ticker, symbol: str) -> None:
     """
     Detect two distinct failure modes before we attempt any data pulls.
@@ -131,13 +192,16 @@ def _check_ticker_validity(yfin_ticker: yf.Ticker, symbol: str) -> None:
         - "Company not available" → user found the right symbol but
           we can't serve data for it (private company, etc.)
 
-    Failure Mode 1 — Ticker doesn't exist:
-        yfinance returns a near-empty info dict with no company name.
-        Example: yf.Ticker("BLAH123").info → {'trailingPegRatio': None}
+    Strategy — two-stage check to minimise rate-limit exposure:
 
-    Failure Mode 2 — Company exists but no public financials:
-        info has longName, sector, etc. but financials DataFrame is empty.
-        Example: a private company whose ticker is listed but not traded.
+    Stage 1 — ticker.history('5d'):
+        The lightest possible yfinance call. If it returns no rows the
+        ticker does not exist (or has never traded). This avoids hitting
+        the heavily rate-limited /quoteSummary endpoint for bad tickers.
+
+    Stage 2 — ticker.financials:
+        If history exists but financials are empty, the company is real
+        but has no public filings (private company, pre-revenue startup).
 
     Args:
         yfin_ticker: The yfinance Ticker object (already instantiated).
@@ -146,38 +210,36 @@ def _check_ticker_validity(yfin_ticker: yf.Ticker, symbol: str) -> None:
     Raises:
         TickerNotFoundError:         Symbol doesn't exist.
         CompanyDataUnavailableError: Company has no public financial data.
+        DataFetchError:              Network / rate-limit failure.
     """
+    # Stage 1: use history — far less rate-limited than .info
     try:
-        info = yfin_ticker.info
+        hist = yfin_ticker.history(period="5d")
     except Exception as exc:
         exc_str = str(exc).lower()
-        # Network-level failures (proxy, timeout, connection refused) are
-        # a different problem from an invalid ticker — don't conflate them.
-        if any(word in exc_str for word in ("proxy", "connect", "timeout", "network", "ssl")):
+        if any(w in exc_str for w in ("429", "too many", "proxy", "connect", "timeout", "ssl")):
             raise DataFetchError(
-                "Unable to reach Yahoo Finance right now. "
-                "Please check your connection and try again."
+                "Yahoo Finance is rate-limiting this request. "
+                "Please wait a moment and try again."
             ) from exc
-        # yfinance throws on badly formed / unknown tickers in some versions
-        raise TickerNotFoundError(
-            f"Ticker '{symbol}' not found. "
-            "Please check the symbol and try again (e.g. 'AAPL', 'INFY.NS')."
+        raise DataFetchError(
+            f"Unable to reach Yahoo Finance for '{symbol}'. "
+            "Please check your connection and try again."
         ) from exc
 
-    # A valid ticker always has at least a company name in its info dict.
-    # Invalid tickers return a sparse dict with no identifying information.
-    has_company_name = bool(info.get("longName") or info.get("shortName"))
-    if not has_company_name:
+    if hist.empty:
         raise TickerNotFoundError(
             f"Ticker '{symbol}' not found. "
             "Please check the symbol and try again (e.g. 'AAPL', 'INFY.NS')."
         )
 
-    # Company name found, but if financials are empty it's private/unavailable.
-    # We call .financials here once; yfinance caches internally so the second
-    # call inside fetch_raw() does not make another network request.
+    # Stage 2: check financials — company exists, but does it have filings?
     if yfin_ticker.financials.empty:
-        company_name = info.get("longName", symbol)
+        # Try to get a display name from fast_info (less rate-limited than .info)
+        try:
+            company_name = yfin_ticker.fast_info.get("companyName", symbol)
+        except Exception:
+            company_name = symbol
         raise CompanyDataUnavailableError(
             f"'{company_name}' does not have publicly available financial "
             "statements. This platform currently covers publicly listed "
@@ -227,6 +289,7 @@ def fetch_raw(ticker_symbol: str) -> dict:
     Raises:
         TickerNotFoundError:         Ticker symbol does not exist.
         CompanyDataUnavailableError: Company has no public financial data.
+        DataFetchError:              Rate limit or network failure.
     """
     symbol = ticker_symbol.strip().upper()
     logger.info("Engine 1 | fetch_raw | starting pull for '%s'", symbol)
@@ -253,7 +316,8 @@ def fetch_raw(ticker_symbol: str) -> dict:
     ) if annual_income else 0
 
     # --- Full company info dict (every key yfinance provides) ---
-    company_info = dict(yfin.info)
+    # Use retry wrapper — .info hits the most rate-limited Yahoo endpoint
+    company_info = dict(_fetch_info_with_retry(yfin, symbol))
 
     logger.info(
         "Engine 1 | fetch_raw | success for '%s' | annual periods fetched: %d",
