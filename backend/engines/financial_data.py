@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -257,18 +258,23 @@ def fetch_raw(ticker_symbol: str) -> dict:
             "Please check the symbol and try again."
         )
 
+    # AV free tier: 1 request/second. Sleep 1.2s between each call to stay safe.
+
     # ── 2. Income statement (annual + quarterly in one call) ────────────────
+    time.sleep(1.2)
     income_data      = _av_get("INCOME_STATEMENT", symbol, av_key)
     annual_income    = income_data.get("annualReports", [])
     quarterly_income = income_data.get("quarterlyReports", [])
 
     # ── 3. Balance sheet (annual) ───────────────────────────────────────────
+    time.sleep(1.2)
     balance_data   = _av_get("BALANCE_SHEET", symbol, av_key)
     annual_balance = balance_data.get("annualReports", [])
 
     # ── 4. Cash flow (annual + quarterly in one call) ───────────────────────
-    cashflow_data     = _av_get("CASH_FLOW", symbol, av_key)
-    annual_cashflow   = cashflow_data.get("annualReports", [])
+    time.sleep(1.2)
+    cashflow_data      = _av_get("CASH_FLOW", symbol, av_key)
+    annual_cashflow    = cashflow_data.get("annualReports", [])
     quarterly_cashflow = cashflow_data.get("quarterlyReports", [])
 
     # ── 5. Check financial data availability ────────────────────────────────
