@@ -129,7 +129,17 @@ def _av_get(function: str, symbol: str, av_key: str) -> dict:
     try:
         response = requests.get(AV_BASE_URL, params=params, timeout=30)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        # AV signals rate limits / plan restrictions via these keys instead of HTTP errors.
+        if "Information" in data:
+            raise DataFetchError(
+                f"Alpha Vantage API limit reached for '{function}': {data['Information']}"
+            )
+        if "Note" in data:
+            raise DataFetchError(
+                f"Alpha Vantage rate limit for '{function}': {data['Note']}"
+            )
+        return data
     except requests.exceptions.Timeout as exc:
         raise DataFetchError(
             f"Alpha Vantage request timed out for function '{function}'. "

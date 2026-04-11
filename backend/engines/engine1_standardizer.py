@@ -147,11 +147,12 @@ def standardize(raw: dict) -> Engine1Output:
         market_capitalization = [market_cap] * len(years)
 
         # — Cash Flow Statement —
-        # AV field: "operatingCashflow"    (lowercase 'f' — not "operatingCashFlow")
-        # AV field: "capitalExpenditures"  (plural — not "capitalExpenditure")
-        # capex values are negative (cash outflow) — preserve sign, do not flip.
-        operating_cash_flow = [_m(r["operatingCashflow"])    for r in annual_cashflow]
-        capex               = [_m(r["capitalExpenditures"])  for r in annual_cashflow]
+        # AV field: "operatingCashflow"   (lowercase 'f' — not "operatingCashFlow")
+        # AV field: "capitalExpenditures" (plural — not "capitalExpenditure")
+        # AV returns capex as a POSITIVE number. Contract requires NEGATIVE (cash outflow).
+        operating_cash_flow = [_m(r["operatingCashflow"]) for r in annual_cashflow]
+        capex_raw           = [_m(r["capitalExpenditures"]) for r in annual_cashflow]
+        capex               = [(-x if x is not None else None) for x in capex_raw]
 
         financials = AnnualFinancials(
             years                 = years,
