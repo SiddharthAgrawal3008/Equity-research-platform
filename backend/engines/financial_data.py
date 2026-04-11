@@ -185,7 +185,7 @@ def fetch_raw(ticker_symbol: str) -> dict:
     api_key = _get_api_key()
 
     # ── 1. Profile ──────────────────────────────────────────────────────────
-    profile = _fmp_get(f"/profile/{symbol}", api_key)
+    profile = _fmp_get("/profile", api_key, params={"symbol": symbol})
 
     if not profile:
         raise TickerNotFoundError(
@@ -195,16 +195,16 @@ def fetch_raw(ticker_symbol: str) -> dict:
 
     # ── 2. Annual financial statements ──────────────────────────────────────
     annual_income = _fmp_get(
-        f"/income-statement/{symbol}", api_key,
-        params={"period": "annual", "limit": 10},
+        "/income-statement", api_key,
+        params={"symbol": symbol, "period": "annual", "limit": 10},
     )
     annual_balance = _fmp_get(
-        f"/balance-sheet-statement/{symbol}", api_key,
-        params={"period": "annual", "limit": 10},
+        "/balance-sheet-statement", api_key,
+        params={"symbol": symbol, "period": "annual", "limit": 10},
     )
     annual_cashflow = _fmp_get(
-        f"/cash-flow-statement/{symbol}", api_key,
-        params={"period": "annual", "limit": 10},
+        "/cash-flow-statement", api_key,
+        params={"symbol": symbol, "period": "annual", "limit": 10},
     )
 
     # ── 3. Check financial data availability ────────────────────────────────
@@ -219,12 +219,12 @@ def fetch_raw(ticker_symbol: str) -> dict:
 
     # ── 4. Quarterly statements (for TTM computation in Step 4) ─────────────
     quarterly_income = _fmp_get(
-        f"/income-statement/{symbol}", api_key,
-        params={"period": "quarter", "limit": 6},
+        "/income-statement", api_key,
+        params={"symbol": symbol, "period": "quarter", "limit": 6},
     )
     quarterly_cashflow = _fmp_get(
-        f"/cash-flow-statement/{symbol}", api_key,
-        params={"period": "quarter", "limit": 6},
+        "/cash-flow-statement", api_key,
+        params={"symbol": symbol, "period": "quarter", "limit": 6},
     )
 
     logger.info(
