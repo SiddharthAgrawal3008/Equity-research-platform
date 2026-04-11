@@ -35,7 +35,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 
 
 # ---------------------------------------------------------------------------
