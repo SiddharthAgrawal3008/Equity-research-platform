@@ -91,6 +91,12 @@ class AnnualFinancials:
                                    # Used by Engine 3: debt_to_ebitda = total_debt / EBITDA
     net_income:       list[float]  # Bottom-line net income
     interest_expense: list[float]  # Always positive (cost of debt)
+    cost_of_revenue:           list[float]           # COGS; used for gross_profit cross-check and efficiency metrics
+    depreciation_amortisation: list[float]           # D&A; used for FCFF projection and EBITDA cross-check
+    pre_tax_income:            list[float]            # EBT; denominator for effective_tax_rate → WACC and NOPAT
+    tax_expense:               list[float]            # Numerator for effective_tax_rate → WACC and NOPAT
+    research_and_development:  list[Optional[float]] # None if not reported
+    selling_general_admin:     list[Optional[float]] # SG&A; None if not separated
 
     # ── Balance Sheet ─────────────────────────────────────────────────────────
     total_assets:         list[float]           # Used in Altman Z-score (X1, X3, X4)
@@ -105,11 +111,20 @@ class AnnualFinancials:
     retained_earnings:    list[float]           # Used in Altman Z-score (X2)
     goodwill:             list[float]           # Monitored for write-down red flag
     market_capitalization: list[float]          # Used in Altman Z-score (X4: mkt equity / total liab)
+    long_term_debt:            list[float]           # Separates LT from ST debt; capital structure analysis
+    total_equity:              list[float]            # Used for ROE, P/B, D/E, WACC equity weight
+    accounts_payable:          list[Optional[float]] # Used for ap_days efficiency metric
+    net_debt:                  list[Optional[float]] # total_debt - cash; used in EV bridge
+    net_working_capital:       list[Optional[float]] # current_assets - current_liabilities; used in FCFF projection
 
     # ── Cash Flow Statement ───────────────────────────────────────────────────
     operating_cash_flow: list[float]  # Cash from operations
                                       # Compared to net income for earnings quality red flag
     capex:               list[float]  # Capital expenditure — always NEGATIVE (cash outflow)
+    free_cash_flow:      list[Optional[float]] # OCF + capex (capex is negative)
+    dividends_paid:      list[Optional[float]] # Always negative; None if no dividends paid
+    share_buybacks:      list[Optional[float]] # Always negative; None if no buybacks
+    net_debt_issuance:   list[Optional[float]] # Positive = raised debt, negative = repaid
 
 
 @dataclass
