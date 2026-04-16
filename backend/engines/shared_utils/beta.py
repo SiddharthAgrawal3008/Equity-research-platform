@@ -2,18 +2,24 @@
 Shared Beta Utility
 ====================
 
-Regression-based beta calculation shared by Engine 2 (Valuation) and
-Engine 3 (Risk & Financial Health).  Falls back to sector-average beta
-from shared_config when market data is unavailable or insufficient.
+Pure-computation beta calculator shared by Engine 2 (Valuation) and
+Engine 3 (Risk & Financial Health).  Receives pre-computed return arrays,
+runs OLS regression, and returns the result.  Does NOT fetch any external
+data — data retrieval is Engine 1's responsibility.
+
+Typical usage by a calling engine:
+
+    from backend.engines.shared_utils.beta import compute_beta, prices_to_returns
+
+    stock_returns = prices_to_returns(bus["market_data"]["weekly_close"])
+    bench_returns = prices_to_returns(bus["market_data"]["benchmark_weekly_close"])
+    result = compute_beta(stock_returns, bench_returns, sector="TECHNOLOGY")
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
-import pandas as pd
-import yfinance as yf
 from scipy.stats import linregress
 
 from backend.engines.shared_config import (
@@ -28,17 +34,37 @@ from backend.engines.shared_config import (
 
 logger = logging.getLogger(__name__)
 
-# Weekly returns per year — used to convert MIN_PRICE_HISTORY_YEARS to a
-# minimum-observation count.
-_WEEKS_PER_YEAR = 52
+# Map frequency codes to approximate data points per year.
+_FREQ_POINTS_PER_YEAR = {"W": 52, "M": 12, "D": 252}
 
 
-def _fallback_result(sector: str, reason: str) -> dict:
+def prices_to_returns(prices: list[float]) -> list[float]:
+    """Convert a list of prices to periodic percentage returns.
+
+    Args:
+        prices: Chronological list of prices (oldest first).
+                Must contain at least 2 elements.
+
+    Returns:
+        List of returns, length = len(prices) - 1.
+        E.g. [100, 105, 103] -> [0.05, -0.019047...]
+    """
+    if len(prices) < 2:
+        return []
+    return [
+        (prices[i] - prices[i - 1]) / prices[i - 1]
+        for i in range(1, len(prices))
+        if prices[i - 1] != 0
+    ]
+
+
+def _fallback_result(sector: str, reason: str, frequency: str) -> dict:
     """Return a sector-average beta dict when calculation is not possible.
 
     Args:
-        sector:  The company sector (UPPERCASE).
-        reason:  Human-readable reason for the fallback (logged as WARNING).
+        sector:    The company sector (UPPERCASE).
+        reason:    Human-readable reason for the fallback (logged as WARNING).
+        frequency: Frequency code for the output metadata.
 
     Returns:
         Beta result dict with source = "industry_fallback".
@@ -56,120 +82,103 @@ def _fallback_result(sector: str, reason: str) -> dict:
         "source": "industry_fallback",
         "benchmark": BENCHMARK_TICKER,
         "lookback_years": BETA_LOOKBACK_YEARS,
-        "frequency": BETA_FREQUENCY,
+        "frequency": frequency,
         "r_squared": None,
     }
 
 
-def compute_beta(ticker: str, sector: str) -> dict:
-    """Compute equity beta via OLS regression against the benchmark index.
+def compute_beta(
+    stock_returns: list[float],
+    benchmark_returns: list[float],
+    sector: str,
+    frequency: str | None = None,
+) -> dict:
+    """Compute equity beta via OLS regression of stock returns on benchmark.
 
-    Downloads weekly price history for *ticker* and the benchmark
-    (S&P 500 by default), computes periodic returns, and regresses
-    stock returns on benchmark returns.  Applies the Bloomberg
-    adjustment (0.67 * raw + 0.33 * 1.0) when enabled in shared_config.
+    This is a pure computation — it expects pre-computed, aligned, clean
+    return arrays.  The caller (typically Engine 3 or Engine 2) is
+    responsible for fetching prices from the data bus and converting
+    them to returns via :func:`prices_to_returns`.
 
-    Falls back to the sector-average beta from ``SECTOR_AVG_BETAS`` when:
-    - yfinance returns no data for the ticker,
-    - price history is shorter than ``MIN_PRICE_HISTORY_YEARS``, or
-    - the regression fails for any reason.
+    Falls back to sector-average beta from ``SECTOR_AVG_BETAS`` when:
+
+    - Input arrays are empty or too short (< ~52 weekly observations),
+    - Arrays have different lengths, or
+    - The regression fails for any reason.
 
     Args:
-        ticker: Stock ticker symbol (e.g. "AAPL").
-        sector: Company sector in UPPERCASE (e.g. "TECHNOLOGY").
+        stock_returns:     Periodic percentage returns for the stock,
+                           e.g. [0.012, -0.005, 0.023, ...].
+                           Already cleaned (no NaN).
+        benchmark_returns: Periodic percentage returns for the benchmark
+                           index, same length and date-aligned.
+        sector:            Company sector in UPPERCASE (e.g. "TECHNOLOGY").
+                           Used for fallback beta lookup.
+        frequency:         Optional frequency code ("W", "M", "D").
+                           Defaults to ``BETA_FREQUENCY`` from shared_config.
+                           Passed through to the output dict for metadata.
 
     Returns:
         A dict with keys: value, raw_beta, source, benchmark,
         lookback_years, frequency, r_squared.
     """
-    # ── 1. Fetch price history ────────────────────────────────────────
+    freq = frequency or BETA_FREQUENCY
+
+    # ── 1. Validate inputs ────────────────────────────────────────────
+    if not stock_returns or not benchmark_returns:
+        return _fallback_result(sector, "Empty return arrays", freq)
+
+    if len(stock_returns) != len(benchmark_returns):
+        return _fallback_result(
+            sector,
+            f"Length mismatch: stock has {len(stock_returns)} returns, "
+            f"benchmark has {len(benchmark_returns)}",
+            freq,
+        )
+
+    # ── 2. Check minimum data requirement ─────────────────────────────
+    points_per_year = _FREQ_POINTS_PER_YEAR.get(freq, 52)
+    min_points = MIN_PRICE_HISTORY_YEARS * points_per_year
+    if len(stock_returns) < min_points:
+        return _fallback_result(
+            sector,
+            f"Insufficient data: {len(stock_returns)} observations "
+            f"(need >= {min_points})",
+            freq,
+        )
+
+    # ── 3. OLS regression ─────────────────────────────────────────────
     try:
-        df = yf.download(
-            [ticker, BENCHMARK_TICKER],
-            period=f"{BETA_LOOKBACK_YEARS}y",
-            interval="1wk",
-            auto_adjust=True,
-            progress=False,
+        slope, _intercept, r_value, _p_value, _std_err = linregress(
+            benchmark_returns, stock_returns,
         )
     except Exception as exc:
-        return _fallback_result(sector, f"yfinance download failed: {exc}")
+        return _fallback_result(sector, f"Regression failed: {exc}", freq)
 
-    if df is None or df.empty:
-        return _fallback_result(sector, "yfinance returned no data")
+    raw_beta: float = slope
+    r_squared: float = r_value ** 2
 
-    # ── 2. Extract Close prices for each ticker ───────────────────────
-    # yfinance returns a MultiIndex DataFrame when downloading multiple
-    # tickers: columns are (Price, Ticker).
-    try:
-        if isinstance(df.columns, pd.MultiIndex):
-            stock_close = df["Close"][ticker].dropna()
-            bench_close = df["Close"][BENCHMARK_TICKER].dropna()
-        else:
-            # Single-ticker fallback (shouldn't happen with two tickers,
-            # but defensive).
-            stock_close = df["Close"].dropna()
-            bench_close = pd.Series(dtype=float)
-    except KeyError:
-        return _fallback_result(
-            sector,
-            f"Ticker '{ticker}' not found in downloaded data",
-        )
-
-    if stock_close.empty or bench_close.empty:
-        return _fallback_result(
-            sector,
-            "Empty price series after extraction",
-        )
-
-    # ── 3. Compute periodic returns ───────────────────────────────────
-    stock_returns = stock_close.pct_change().dropna()
-    bench_returns = bench_close.pct_change().dropna()
-
-    # Align on common dates (inner join).
-    aligned = pd.concat(
-        {"stock": stock_returns, "bench": bench_returns},
-        axis=1,
-    ).dropna()
-
-    # ── 4. Check minimum data requirement ─────────────────────────────
-    min_observations = MIN_PRICE_HISTORY_YEARS * _WEEKS_PER_YEAR
-    if len(aligned) < min_observations:
-        return _fallback_result(
-            sector,
-            f"Insufficient data: {len(aligned)} observations "
-            f"(need >= {min_observations})",
-        )
-
-    # ── 5. OLS regression ─────────────────────────────────────────────
-    try:
-        result = linregress(aligned["bench"], aligned["stock"])
-    except Exception as exc:
-        return _fallback_result(sector, f"Regression failed: {exc}")
-
-    raw_beta: float = result.slope
-    r_squared: float = result.rvalue ** 2
-
-    # ── 6. Bloomberg adjustment ───────────────────────────────────────
+    # ── 4. Bloomberg adjustment ───────────────────────────────────────
     if BETA_USE_ADJUSTED:
         adjusted_beta = 0.67 * raw_beta + 0.33 * 1.0
     else:
         adjusted_beta = raw_beta
 
-    # ── 7. Sanity check ──────────────────────────────────────────────
+    # ── 5. Sanity check ──────────────────────────────────────────────
     if not (0 < adjusted_beta < 5):
         logger.warning(
-            "Beta for %s is outside expected range (0, 5): %.4f",
-            ticker,
+            "Beta is outside expected range (0, 5): %.4f (sector=%s)",
             adjusted_beta,
+            sector,
         )
 
     logger.info(
-        "Beta for %s: adjusted=%.4f, raw=%.4f, R²=%.4f (%d obs)",
-        ticker,
+        "Beta calculated: adjusted=%.4f, raw=%.4f, R²=%.4f (%d obs, freq=%s)",
         adjusted_beta,
         raw_beta,
         r_squared,
-        len(aligned),
+        len(stock_returns),
+        freq,
     )
 
     return {
@@ -178,6 +187,6 @@ def compute_beta(ticker: str, sector: str) -> dict:
         "source": "calculated",
         "benchmark": BENCHMARK_TICKER,
         "lookback_years": BETA_LOOKBACK_YEARS,
-        "frequency": BETA_FREQUENCY,
+        "frequency": freq,
         "r_squared": round(r_squared, 4),
     }
