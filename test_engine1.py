@@ -57,3 +57,56 @@ print(f"  is_bank:          {q['is_bank']}")
 print(f"  is_reit:          {q['is_reit']}")
 print(f"  warnings:         {q['warnings']}")
 print(f"  errors:           {q['errors']}")
+
+print("\n=== NEW FIELDS (last 3 years) ===")
+print(f"  Cost of Revenue:     {[round(x,1) if x is not None else None for x in f.cost_of_revenue[-3:]]}")
+print(f"  D&A:                 {[round(x,1) if x is not None else None for x in f.depreciation_amortisation[-3:]]}")
+print(f"  Pre-tax Income:      {[round(x,1) if x is not None else None for x in f.pre_tax_income[-3:]]}")
+print(f"  Tax Expense:         {[round(x,1) if x is not None else None for x in f.tax_expense[-3:]]}")
+print(f"  R&D:                 {[round(x,1) if x is not None else None for x in f.research_and_development[-3:]]}")
+print(f"  SG&A:                {[round(x,1) if x is not None else None for x in f.selling_general_admin[-3:]]}")
+print(f"  Long-term Debt:      {[round(x,1) if x is not None else None for x in f.long_term_debt[-3:]]}")
+print(f"  Total Equity:        {[round(x,1) if x is not None else None for x in f.total_equity[-3:]]}")
+print(f"  Accounts Payable:    {[round(x,1) if x is not None else None for x in f.accounts_payable[-3:]]}")
+print(f"  Net Debt:            {[round(x,1) if x is not None else None for x in f.net_debt[-3:]]}")
+print(f"  Net Working Capital: {[round(x,1) if x is not None else None for x in f.net_working_capital[-3:]]}")
+print(f"  Free Cash Flow:      {[round(x,1) if x is not None else None for x in f.free_cash_flow[-3:]]}")
+print(f"  Net Debt Issuance:   {[round(x,1) if x is not None else None for x in f.net_debt_issuance[-3:]]}")
+
+print("\n=== DIVIDENDS PAID (last 3) ===")
+print(f.dividends_paid[-3:])
+print("\n=== SHARE BUYBACKS (last 3) ===")
+print(f.share_buybacks[-3:])
+print("\n=== QUALITY WARNINGS ===")
+for w in out.quality["warnings"]:
+    print(" -", w)
+print("\n=== META ===")
+print(f"Ticker: {out.meta.ticker}")
+print(f"Price:  {out.meta.current_price}")
+print(f"EV:     {out.meta.enterprise_value:.1f}M")
+print(f"Years of history: {out.quality['years_of_history']}")
+
+from backend.engines.engine1_derived import compute_derived
+out = compute_derived(out)
+
+print("\n=== MARGINS (latest year) ===")
+for k, v in out.margins.items():
+    print(f"  {k}: {v[-1]:.4f}" if v[-1] is not None else f"  {k}: None")
+
+print("\n=== GROWTH ===")
+print(f"  revenue_cagr: {out.growth['revenue_cagr']:.4f}" if out.growth['revenue_cagr'] is not None else "  revenue_cagr: None")
+print(f"  revenue_yoy last 3: {out.growth['revenue_yoy'][-3:]}")
+print(f"  fcf_yoy last 3: {out.growth['fcf_yoy'][-3:]}")
+
+print("\n=== RETURNS (latest year) ===")
+print(f"  roe:  {out.returns['roe'][-1]:.4f}" if out.returns['roe'][-1] is not None else "  roe: None")
+print(f"  roa:  {out.returns['roa'][-1]:.4f}" if out.returns['roa'][-1] is not None else "  roa: None")
+print(f"  roic: {out.returns['roic'][-1]:.4f}" if out.returns['roic'][-1] is not None else "  roic: None")
+
+print("\n=== EFFICIENCY (latest year) ===")
+for k, v in out.efficiency.items():
+    print(f"  {k}: {v[-1]:.2f}" if v[-1] is not None else f"  {k}: None")
+
+print("\n=== TREND FLAGS ===")
+for k, v in out.trend_flags.items():
+    print(f"  {k}: {v}")
