@@ -75,8 +75,11 @@ def compute_market_risk(financial_data: dict) -> dict:
             "insufficient weekly price data for regression"
         )
 
-    # ── C. Check if price data exists for remaining metrics ───────────
-    if not weekly_close or not daily_close:
+    # ── C. Check data availability ──────────────────────────────────
+    has_weekly = bool(weekly_close)
+    has_daily = bool(daily_close)
+
+    if not has_weekly and not has_daily:
         logger.warning(
             "No price history available — market risk metrics unavailable"
         )
@@ -98,6 +101,16 @@ def compute_market_risk(financial_data: dict) -> dict:
             "price_data_end": None,
             "warnings": warnings,
         }
+
+    if not has_daily:
+        warnings.append(
+            "No daily price data — max drawdown and VaR unavailable"
+        )
+    if not has_weekly:
+        warnings.append(
+            "No weekly price data — volatility, Sharpe, and annualized "
+            "return unavailable"
+        )
 
     # ── D. Historical volatility (annualized from weekly returns) ─────
     historical_volatility = None
@@ -173,8 +186,15 @@ def compute_market_risk(financial_data: dict) -> dict:
         warnings.append(f"VaR computation failed: {exc}")
 
     # ── I. Price data date range ──────────────────────────────────────
-    price_data_start = daily_dates[0] if daily_dates else None
-    price_data_end = daily_dates[-1] if daily_dates else None
+    if daily_dates:
+        price_data_start = daily_dates[0]
+        price_data_end = daily_dates[-1]
+    elif weekly_dates:
+        price_data_start = weekly_dates[0]
+        price_data_end = weekly_dates[-1]
+    else:
+        price_data_start = None
+        price_data_end = None
 
     logger.info(
         "Market risk computed: vol=%.4f, sharpe=%.4f, drawdown=%.4f, "
