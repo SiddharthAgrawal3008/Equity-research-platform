@@ -563,16 +563,19 @@ def compute_sensitivity(
     sector = meta.get("sector", "").upper()
 
     # Build ranges centered on base case
-    half_w = (SENSITIVITY_WACC_POINTS - 1) // 2
-    half_g = (SENSITIVITY_TGR_POINTS - 1) // 2
+    # SENSITIVITY_*_POINTS = steps each side (e.g. 2 → 5-point grid)
+    half_w = SENSITIVITY_WACC_POINTS
+    half_g = SENSITIVITY_TGR_POINTS
+    total_w = 2 * half_w + 1
+    total_g = 2 * half_g + 1
 
     wacc_range = [
         wacc_val + (i - half_w) * SENSITIVITY_WACC_STEP
-        for i in range(SENSITIVITY_WACC_POINTS)
+        for i in range(total_w)
     ]
     tgr_range = [
         TERMINAL_GROWTH_RATE + (i - half_g) * SENSITIVITY_TGR_STEP
-        for i in range(SENSITIVITY_TGR_POINTS)
+        for i in range(total_g)
     ]
 
     # Exit multiple fallback

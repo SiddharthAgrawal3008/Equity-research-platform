@@ -1,4 +1,4 @@
-# Equity Research Platform
+# Equity Research Platform (Ongoing)
 
 Automated equity research and valuation intelligence system.
 

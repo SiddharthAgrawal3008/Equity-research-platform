@@ -370,41 +370,39 @@ class ValuationEngine(BaseEngine):
         quality: dict,
         warnings: list[str],
     ) -> str:
-        """Start at 1.0, apply deductions, return label."""
+        """Start at 1.0, apply deductions (negative values), return label."""
 
         score = 1.0
-        deductions = CONFIDENCE_DEDUCTIONS
+        ded = CONFIDENCE_DEDUCTIONS  # values are negative, e.g. -0.10
 
         # Sector average beta (always true in v1)
-        score -= deductions.get("sector_avg_beta", 0)
+        score += ded.get("sector_avg_beta", 0)
 
         # History length
         years = quality.get("years_of_history", 0)
         if years < 3:
-            score -= deductions.get("less_than_3yr_history", 0)
+            score += ded.get("limited_history_3yr", 0)
         elif years < 5:
-            score -= deductions.get("less_than_5yr_history", 0)
+            score += ded.get("limited_history_5yr", 0)
 
         # Terminal value concentration
         tv_pct = dcf.get("terminal_value_pct") or 0
         if tv_pct > TV_CRITICAL_THRESHOLD:
-            score -= deductions.get("tv_above_90pct", 0)
+            score += ded.get("tv_above_90pct", 0)
         elif tv_pct > TV_WARNING_THRESHOLD:
-            score -= deductions.get("tv_above_85pct", 0)
+            score += ded.get("tv_above_85pct", 0)
 
         # DCF extreme result
         dcf_price = dcf.get("intrinsic_value_per_share")
         if dcf_price is not None and dcf.get("status") == "success":
-            summary_current = dcf.get("wacc")  # just confirming DCF ran
-            # Check price ratio for extreme deduction
             if any("extreme" in w.lower() for w in warnings):
-                score -= deductions.get("dcf_extreme_result", 0)
+                score += ded.get("dcf_extreme_result", 0)
 
         # Negative EBITDA or pre-revenue (DCF skipped)
         if dcf.get("status") == "failed":
             dcf_err = dcf.get("_error", "") or ""
             if "EBITDA" in dcf_err or "Pre-revenue" in dcf_err:
-                score -= deductions.get("negative_ebitda", 0)
+                score += ded.get("negative_ebitda", 0)
 
         # DCF and relative divergence
         implied_prices = relative.get("_implied_prices", [])
@@ -413,15 +411,15 @@ class ValuationEngine(BaseEngine):
             if rel_median_val > 0:
                 div = abs(dcf_price - rel_median_val) / rel_median_val
                 if div > 0.50:
-                    score -= deductions.get("dcf_relative_diverge", 0)
+                    score += ded.get("dcf_relative_diverge", 0)
 
         # Data quality warnings
         data_warnings = quality.get("warnings", [])
-        score -= len(data_warnings) * deductions.get("per_data_warning", 0)
+        score += len(data_warnings) * ded.get("data_quality_warning", 0)
 
         # Tax rate anomaly
         if any("tax rate" in w.lower() for w in warnings):
-            score -= deductions.get("anomalous_tax_rate", 0)
+            score += ded.get("anomalous_tax_rate", 0)
 
         # Clamp
         score = max(score, 0.0)
