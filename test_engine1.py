@@ -110,3 +110,9 @@ for k, v in out.efficiency.items():
 print("\n=== TREND FLAGS ===")
 for k, v in out.trend_flags.items():
     print(f"  {k}: {v}")
+
+from backend.engines.engine1_ttm import compute_ttm
+out = compute_ttm(out, raw)
+print("\n=== TTM ===")
+for k, v in out.ttm.items():
+    print(f"  {k}: {v}")
