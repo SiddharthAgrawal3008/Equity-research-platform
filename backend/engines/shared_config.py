@@ -171,3 +171,12 @@ CONFIDENCE_THRESHOLDS: dict[str, float] = {
     "LOW":    0.25,
     # Below 0.25 = "UNRELIABLE"
 }
+
+# ── 13. ENGINE 4 — NLP INTELLIGENCE PARAMETERS ────────────────────────
+
+FMP_API_KEY: str = ""                    # Paid key injected here when available;
+                                         # empty string → E4 falls back to EDGAR only
+RISK_WORD_THRESHOLD: float = 0.07        # E4 outputs raw frequency only;
+                                         # E5 applies this threshold to flag high risk
+NLP_LOOKBACK_QUARTERS: int = 4           # Transcripts analysed for trend detection
+STALENESS_DAYS: int = 90                 # Most recent document older than this → staleness_flag
