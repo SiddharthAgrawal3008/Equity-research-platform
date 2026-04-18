@@ -242,7 +242,7 @@ class ValuationEngine(BaseEngine):
         current_price = meta.get("current_price", 0)
 
         summary = self._build_summary(dcf, relative, current_price, quality, warnings)
-        meta_out = self._build_meta(fd, warnings)
+        meta_out = self._build_meta(fd, warnings, dcf.get("beta_source", "sector_average"))
 
         return {
             "dcf": dcf,
@@ -434,7 +434,7 @@ class ValuationEngine(BaseEngine):
         else:
             return "Unreliable"
 
-    def _build_meta(self, fd: dict, warnings: list[str]) -> dict:
+    def _build_meta(self, fd: dict, warnings: list[str], beta_source: str = "sector_average") -> dict:
         """Build the meta section of the output."""
         quality = fd.get("quality", {})
         data_warnings = quality.get("warnings", [])
@@ -452,7 +452,7 @@ class ValuationEngine(BaseEngine):
             "assumptions": {
                 "projection_years": PROJECTION_YEARS,
                 "terminal_growth_rate": TERMINAL_GROWTH_RATE,
-                "beta_source": "sector_average",
+                "beta_source": beta_source,
             },
             "warnings": warnings,
             "data_quality_flag": flag,
