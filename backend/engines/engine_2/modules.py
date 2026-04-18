@@ -15,6 +15,7 @@ from statistics import median
 from typing import Optional
 
 from backend.engines.financial_analysis import safe_divide
+from backend.engines.shared_utils.beta import compute_beta, prices_to_returns
 from backend.engines.shared_config import (
     RISK_FREE_RATE,
     EQUITY_RISK_PREMIUM,
@@ -228,8 +229,19 @@ def compute_wacc(fd: dict, warnings: list[str]) -> dict:
 
     # ── Cost of Equity (CAPM) ──────────────────────────────────────
 
-    beta = SECTOR_AVG_BETAS.get(sector, DEFAULT_BETA)
-    beta_source = "sector_average"
+    market_data = fd.get("market_data", {})
+    weekly_close = market_data.get("weekly_close", [])
+    benchmark_weekly_close = market_data.get("benchmark_weekly_close", [])
+
+    if weekly_close and benchmark_weekly_close:
+        stock_returns = prices_to_returns(weekly_close)
+        bench_returns = prices_to_returns(benchmark_weekly_close)
+        beta_result = compute_beta(stock_returns, bench_returns, sector)
+        beta = beta_result["value"]
+        beta_source = beta_result["source"]
+    else:
+        beta = SECTOR_AVG_BETAS.get(sector, DEFAULT_BETA)
+        beta_source = "sector_average"
 
     re = RISK_FREE_RATE + beta * EQUITY_RISK_PREMIUM
     if re < RISK_FREE_RATE:
@@ -413,6 +425,7 @@ def compute_dcf(
         "cost_of_equity": wacc_result["cost_of_equity"],
         "cost_of_debt": wacc_result["cost_of_debt"],
         "beta_used": wacc_result["beta_used"],
+        "beta_source": wacc_result["beta_source"],
         "risk_free_rate": wacc_result["risk_free_rate"],
         "equity_risk_premium": wacc_result["equity_risk_premium"],
         "debt_weight": wacc_result["debt_weight"],
