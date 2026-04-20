@@ -25,8 +25,6 @@ from backend.engines.shared_config import (
     MIXED_SIGNAL_DIVERGENCE,
     CONFIDENCE_DEDUCTIONS,
     CONFIDENCE_THRESHOLDS,
-    DCF_EXTREME_HIGH,
-    DCF_EXTREME_LOW,
     TV_WARNING_THRESHOLD,
     TV_CRITICAL_THRESHOLD,
 )
@@ -132,7 +130,6 @@ class ValuationEngine(BaseEngine):
             )
 
         ttm = fd.get("ttm", {})
-        meta = fd.get("meta", {})
         years_of_history = quality.get("years_of_history", 0)
 
         # Pre-revenue check
@@ -159,6 +156,12 @@ class ValuationEngine(BaseEngine):
         # ── Module 1: Revenue & FCF Forecasting ────────────────────
 
         forecasts = None
+        # TODO: 3-Statement Model
+        # Replace forecast_revenue_and_fcf() with forecast_3statement() for a full
+        # IS → BS → CF linked projection. Pass via context["forecasting_mode"] = "simple"|"full"
+        # from the API request. New file: engine_2/modules_3statement.py
+        # Required changes: routes/pipeline.py (add field), context.py (add bus key),
+        # modules_3statement.py (new module returning same interface + statement tables)
         if run_dcf:
             try:
                 forecasts = forecast_revenue_and_fcf(fd, warnings)
@@ -244,12 +247,24 @@ class ValuationEngine(BaseEngine):
         summary = self._build_summary(dcf, relative, current_price, quality, warnings)
         meta_out = self._build_meta(fd, warnings, dcf.get("beta_source", "sector_average"))
 
+        # TODO: Reverse DCF
+        # Solve for the implied growth rate baked into the current market price using
+        # bisection search. Config already has: REVERSE_DCF_TOLERANCE, REVERSE_DCF_MAX_ITER,
+        # REVERSE_DCF_GROWTH_LO/HI, REVERSE_DCF_OPTIMISM_BAND in shared_config.py
+        # Output: implied_growth_rate, vs_consensus (Optimistic/In Line/Conservative)
+        # Add to summary dict as: "implied_growth_rate" and "market_implied_stance"
+
         return {
             "dcf": dcf,
             "relative": relative,
             "sensitivity": sensitivity,
             "summary": summary,
             "meta": meta_out,
+            "valuation_range": {
+                "low": summary.get("valuation_range_low"),
+                "mid": summary.get("valuation_range_mid"),
+                "high": summary.get("valuation_range_high"),
+            },
         }
 
     def _build_summary(
