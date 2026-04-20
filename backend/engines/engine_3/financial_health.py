@@ -33,8 +33,8 @@ def _safe_div(numerator, denominator, fallback=None):
     return numerator / denominator
 
 
-def _last_valid(series: list, years: list) -> tuple:
-    """Return (value, year_index) of the last non-None entry, or (None, None)."""
+def _last_valid(series: list) -> tuple:
+    """Return (value, index) of the last non-None entry, or (None, None)."""
     for i in range(len(series) - 1, -1, -1):
         if series[i] is not None:
             return series[i], i
@@ -52,10 +52,11 @@ def compute_financial_health(financial_data: dict) -> dict:
         Dict with financial_health metrics, financial_years_used, and
         warnings list.
     """
-    financials = financial_data["financials"]
-    meta = financial_data["meta"]
+    financials = financial_data.get("financials", {})
+    meta = financial_data.get("meta", {})
     quality = financial_data.get("quality", {})
-    years = financial_data.get("years", [])
+    ttm = financial_data.get("ttm", {})
+    years = financials.get("years", [])  # years lives under financials, not financial_data
 
     sector = meta.get("sector", "").upper()
     market_cap = meta.get("market_cap", 0) or 0
@@ -138,38 +139,40 @@ def compute_financial_health(financial_data: dict) -> dict:
         )
         logger.info("Altman Z-score skipped: %s", reason)
 
-    # ── C. Interest Coverage ──────────────────────────────────────────
+    # ── C. Interest Coverage (TTM EBITDA / TTM interest; fallback to last valid) ──
     interest_coverage = None
     try:
-        interest_series = financials["interest_expense"]
-        interest_val, interest_idx = _last_valid(interest_series, years)
-        if interest_val is None or interest_val == 0:
-            warnings.append("No interest expense data available")
+        ttm_ebitda   = ttm.get("ebitda")
+        ttm_interest = ttm.get("interest_expense")
+        if ttm_ebitda is not None and ttm_interest is not None and ttm_interest != 0:
+            interest_coverage = round(_safe_div(ttm_ebitda, ttm_interest, 0), 4)
         else:
-            ebit_for_coverage = financials["ebit"][interest_idx]
-            interest_coverage = round(
-                _safe_div(ebit_for_coverage, interest_val, 0), 4
-            )
-            if interest_idx != latest:
-                warnings.append(
-                    f"Interest coverage uses FY{years[interest_idx]} data "
-                    f"(latest with interest expense)"
-                )
+            interest_series = financials["interest_expense"]
+            interest_val, interest_idx = _last_valid(interest_series)
+            if interest_val is None or interest_val == 0:
+                warnings.append("No interest expense data available")
+            else:
+                numerator = ttm_ebitda if ttm_ebitda is not None else financials["ebitda"][interest_idx]
+                interest_coverage = round(_safe_div(numerator, interest_val, 0), 4)
+                if interest_idx != latest:
+                    warnings.append(
+                        f"Interest coverage uses FY{years[interest_idx]} interest expense "
+                        f"(latest available)"
+                    )
     except Exception as exc:
         logger.warning("Interest coverage computation failed: %s", exc)
         warnings.append(f"Interest coverage computation failed: {exc}")
 
-    # ── D. Debt/EBITDA ────────────────────────────────────────────────
+    # ── D. Debt/EBITDA (TTM EBITDA; latest total_debt) ───────────────
     debt_to_ebitda = None
     try:
-        ebitda_latest = financials["ebitda"][latest]
+        ttm_ebitda  = ttm.get("ebitda")
+        ebitda_val  = ttm_ebitda if ttm_ebitda is not None else financials["ebitda"][latest]
         debt_latest = financials["total_debt"][latest]
-        if ebitda_latest is None or ebitda_latest <= 0:
-            warnings.append(
-                "EBITDA is non-positive — debt/EBITDA not meaningful"
-            )
+        if ebitda_val is None or ebitda_val <= 0:
+            warnings.append("EBITDA is non-positive — debt/EBITDA not meaningful")
         else:
-            debt_to_ebitda = round(_safe_div(debt_latest, ebitda_latest), 4)
+            debt_to_ebitda = round(_safe_div(debt_latest, ebitda_val), 4)
     except Exception as exc:
         logger.warning("Debt/EBITDA computation failed: %s", exc)
         warnings.append(f"Debt/EBITDA computation failed: {exc}")

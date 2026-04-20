@@ -2,24 +2,17 @@
 Engine 3 — Risk & Financial Health Engine (Owner: Siddharth)
 ============================================================
 
-Input:  financial_data (from bus)
-Output: risk_metrics (to bus)
+Orchestrator: delegates computation to the engine_3/ sub-modules and
+maps their rich output to the risk_metrics bus schema.
 
-Responsibilities:
-    - Beta calculation
-    - Historical volatility
-    - Sharpe ratio
-    - Max drawdown
-    - Value at Risk (VaR)
-    - Altman Z-score
-    - Interest coverage ratio
-    - Debt to EBITDA
-
-TODO (Siddharth): Replace the stub below with real implementation.
+Sub-modules:
+    engine_3/market_risk.py      — beta, volatility, Sharpe, drawdown, VaR
+    engine_3/financial_health.py — Altman Z, interest coverage, debt/EBITDA, ratios
 """
 
 from backend.pipeline.base_engine import BaseEngine
-from backend.engines.mock_bus_data import MOCK_RISK_METRICS
+from backend.engines.engine_3.market_risk import compute_market_risk
+from backend.engines.engine_3.financial_health import compute_financial_health
 
 
 class RiskEngine(BaseEngine):
@@ -28,11 +21,37 @@ class RiskEngine(BaseEngine):
     produces = "risk_metrics"
 
     def run(self, context: dict) -> dict:
-        financial_data = context["financial_data"]
+        fd = context.get("financial_data", {})
 
-        # ----- STUB: replace with real risk calculations -----
-        # Real implementation should:
-        # 1. Compute market risk metrics (beta, vol, Sharpe, drawdown, VaR)
-        # 2. Compute financial health metrics (Z-score, coverage, leverage)
-        # 3. Return dict matching the risk_metrics bus key schema
-        return MOCK_RISK_METRICS
+        mr = compute_market_risk(fd)
+        fh = compute_financial_health(fd)
+
+        return {
+            "market_risk": {
+                # Required fields
+                "beta":              mr["beta"]["value"],
+                "volatility_annual": mr["market_risk"]["historical_volatility"],
+                "sharpe_ratio":      mr["market_risk"]["sharpe_ratio"],
+                "max_drawdown":      mr["market_risk"]["max_drawdown"],
+                "var_95":            mr["market_risk"]["var_95_daily"],
+                # Richer fields
+                "beta_source":        mr["beta"]["source"],
+                "annualized_return":  mr["market_risk"]["annualized_return"],
+                "max_drawdown_start": mr["market_risk"]["max_drawdown_start"],
+                "max_drawdown_end":   mr["market_risk"]["max_drawdown_end"],
+            },
+            "financial_health": {
+                # Required fields
+                "altman_z_score":    fh["financial_health"]["altman_z_score"],
+                "interest_coverage": fh["financial_health"]["interest_coverage"],
+                "debt_to_ebitda":    fh["financial_health"]["debt_to_ebitda"],
+                "current_ratio":     fh["financial_health"]["current_ratio"],
+                # Richer fields
+                "altman_z_zone":  fh["financial_health"]["altman_z_zone"],
+                "quick_ratio":    fh["financial_health"]["quick_ratio"],
+                "debt_to_equity": fh["financial_health"]["debt_to_equity"],
+                "cash_to_debt":   fh["financial_health"]["cash_to_debt"],
+                "earnings_quality": fh["financial_health"]["earnings_quality"],
+            },
+            "warnings": mr["warnings"] + fh["warnings"],
+        }

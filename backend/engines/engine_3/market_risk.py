@@ -1,204 +1,180 @@
 """
 Engine 3 — Market Risk Module
-===============================
 
-Computes all price-based risk metrics: beta, historical volatility,
-Sharpe ratio, max drawdown, and Value at Risk (VaR).
+Computes all price-based risk metrics from daily closing prices:
+  beta, historical volatility, Sharpe ratio, max drawdown, VaR (95%).
 
-This module reads pre-fetched price arrays from the shared context bus
-(populated by Engine 1) and performs pure computation.  It does NOT call
-yfinance or any external API.
+Input keys read from financial_data:
+    financial_data["market_data"]["historical_prices"]  — daily stock closing prices
+    financial_data["market_data"]["sp500_prices"]       — daily S&P 500 prices (optional)
+    financial_data["market_data"]["historical_dates"]   — ISO date strings, same length as prices (optional)
+    financial_data["meta"]["sector"]                    — sector string, for beta fallback
 
-Data flow:
-    Engine 1 (fetches prices) → bus["market_data"]
-        → this module reads price arrays
-        → passes returns to shared compute_beta()
-        → computes volatility, Sharpe, drawdown, VaR
-        → returns results dict
+Does NOT call any external API — all data must be pre-fetched by Engine 1.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from math import sqrt
 
 import numpy as np
 
 from backend.engines.shared_config import (
+    DEFAULT_BETA,
     RISK_FREE_RATE,
+    SECTOR_AVG_BETAS,
     VAR_CONFIDENCE_LEVEL,
 )
-from backend.engines.shared_utils.beta import compute_beta, prices_to_returns
 
 logger = logging.getLogger(__name__)
 
 
 def compute_market_risk(financial_data: dict) -> dict:
-    """Compute all market risk metrics from price data on the bus.
-
-    Args:
-        financial_data: The full financial_data dict from the context bus.
-                        Reads from financial_data["market_data"] for prices
-                        and financial_data["meta"]["sector"] for beta fallback.
+    """Compute market risk metrics from price history on the data bus.
 
     Returns:
-        Dict with beta, market_risk, price metadata, and warnings.
+        {
+            "beta":        {"value": float, "raw_beta": float|None, "source": str},
+            "market_risk": {
+                "historical_volatility": float|None,   # annualised (daily std × √252)
+                "sharpe_ratio":          float|None,
+                "max_drawdown":          float|None,
+                "max_drawdown_start":    str|None,     # "YYYY-MM"
+                "max_drawdown_end":      str|None,
+                "var_95_daily":          float|None,   # 5th-pct of daily log returns
+                "annualized_return":     float|None,
+            },
+            "warnings": list[str],
+        }
     """
-    meta = financial_data["meta"]
     market_data = financial_data.get("market_data", {})
-    sector = meta.get("sector", "")
+    sector      = financial_data.get("meta", {}).get("sector", "")
 
-    daily_close = market_data.get("daily_close", [])
-    weekly_close = market_data.get("weekly_close", [])
-    benchmark_weekly_close = market_data.get("benchmark_weekly_close", [])
-    benchmark_daily_close = market_data.get("benchmark_daily_close", [])
-    daily_dates = market_data.get("daily_dates", [])
-    weekly_dates = market_data.get("weekly_dates", [])
+    prices = market_data.get("historical_prices") or []
+    sp500  = market_data.get("sp500_prices")       or []
+    dates  = market_data.get("historical_dates")   or []
 
     warnings: list[str] = []
 
-    # ── A. Compute returns ────────────────────────────────────────────
-    stock_weekly_returns = prices_to_returns(weekly_close)
-    bench_weekly_returns = prices_to_returns(benchmark_weekly_close)
-    stock_daily_returns = prices_to_returns(daily_close)
-
-    # ── B. Beta (always attempted — handles fallback internally) ──────
-    beta_result = compute_beta(
-        stock_returns=stock_weekly_returns,
-        benchmark_returns=bench_weekly_returns,
-        sector=sector,
-    )
-    if beta_result["source"] == "industry_fallback":
-        warnings.append(
-            f"Beta: using sector average ({beta_result['value']}) — "
-            "insufficient weekly price data for regression"
-        )
-
-    # ── C. Check if price data exists for remaining metrics ───────────
-    if not weekly_close or not daily_close:
-        logger.warning(
-            "No price history available — market risk metrics unavailable"
-        )
-        warnings.append(
-            "No price history available — market risk metrics unavailable"
-        )
+    if len(prices) < 2:
+        warnings.append("No price history — all market risk metrics unavailable")
         return {
-            "beta": beta_result,
-            "market_risk": {
-                "historical_volatility": None,
-                "sharpe_ratio": None,
-                "max_drawdown": None,
-                "max_drawdown_start": None,
-                "max_drawdown_end": None,
-                "var_95_daily": None,
-                "annualized_return": None,
-            },
-            "price_data_start": None,
-            "price_data_end": None,
+            "beta": {"value": _sector_beta(sector), "raw_beta": None, "source": "industry_fallback"},
+            "market_risk": _empty_market_risk(),
             "warnings": warnings,
         }
 
-    # ── D. Historical volatility (annualized from weekly returns) ─────
-    historical_volatility = None
-    try:
-        if stock_weekly_returns:
-            weekly_std = np.std(stock_weekly_returns, ddof=1)
-            historical_volatility = round(float(weekly_std * sqrt(52)), 4)
-    except Exception as exc:
-        logger.warning("Volatility computation failed: %s", exc)
-        warnings.append(f"Volatility computation failed: {exc}")
+    price_arr = np.array(prices, dtype=float)
+    log_rets  = np.log(price_arr[1:] / price_arr[:-1])
 
-    # ── E. Annualized return (CAGR from weekly close prices) ──────────
-    annualized_return = None
-    try:
-        if len(weekly_close) >= 2 and len(weekly_dates) >= 2:
-            start_price = weekly_close[0]
-            end_price = weekly_close[-1]
-            start_date = datetime.strptime(weekly_dates[0], "%Y-%m-%d")
-            end_date = datetime.strptime(weekly_dates[-1], "%Y-%m-%d")
-            n_years = (end_date - start_date).days / 365.25
-            if n_years > 0 and start_price > 0:
-                annualized_return = round(
-                    float((end_price / start_price) ** (1 / n_years) - 1), 4
-                )
-    except Exception as exc:
-        logger.warning("Annualized return computation failed: %s", exc)
-        warnings.append(f"Annualized return computation failed: {exc}")
+    # ── Beta ──────────────────────────────────────────────────────────
+    beta_result = _compute_beta(log_rets, sp500, sector, warnings)
 
-    # ── F. Sharpe ratio ───────────────────────────────────────────────
-    sharpe_ratio = None
+    # ── Volatility (annualised) ───────────────────────────────────────
+    volatility = None
     try:
-        if annualized_return is not None and historical_volatility:
-            sharpe_ratio = round(
-                float(
-                    (annualized_return - RISK_FREE_RATE)
-                    / historical_volatility
-                ),
-                4,
-            )
+        volatility = round(float(np.std(log_rets, ddof=1) * np.sqrt(252)), 4)
     except Exception as exc:
-        logger.warning("Sharpe ratio computation failed: %s", exc)
-        warnings.append(f"Sharpe ratio computation failed: {exc}")
+        warnings.append(f"Volatility failed: {exc}")
 
-    # ── G. Max drawdown (from daily data) ─────────────────────────────
-    max_drawdown = None
-    max_drawdown_start = None
-    max_drawdown_end = None
+    # ── Annualised return (CAGR) ──────────────────────────────────────
+    ann_return = None
     try:
-        if len(daily_close) >= 2:
-            daily_arr = np.array(daily_close, dtype=float)
-            running_max = np.maximum.accumulate(daily_arr)
-            drawdown = (daily_arr - running_max) / running_max
-            max_drawdown = round(float(drawdown.min()), 4)
-            trough_idx = int(drawdown.argmin())
-            peak_idx = int(daily_arr[: trough_idx + 1].argmax())
-            if daily_dates:
-                max_drawdown_start = daily_dates[peak_idx][:7]  # "YYYY-MM"
-                max_drawdown_end = daily_dates[trough_idx][:7]
+        n = len(log_rets)
+        ann_return = round(float((price_arr[-1] / price_arr[0]) ** (252 / n) - 1), 4)
     except Exception as exc:
-        logger.warning("Max drawdown computation failed: %s", exc)
-        warnings.append(f"Max drawdown computation failed: {exc}")
+        warnings.append(f"Annualised return failed: {exc}")
 
-    # ── H. VaR — Historical Simulation, 95%, Daily ────────────────────
-    var_95_daily = None
+    # ── Sharpe ratio ──────────────────────────────────────────────────
+    sharpe = None
     try:
-        if stock_daily_returns:
-            percentile = (1 - VAR_CONFIDENCE_LEVEL) * 100  # 5th percentile
-            var_95_daily = round(
-                float(np.percentile(stock_daily_returns, percentile)), 4
-            )
+        if ann_return is not None and volatility:
+            sharpe = round((ann_return - RISK_FREE_RATE) / volatility, 4)
     except Exception as exc:
-        logger.warning("VaR computation failed: %s", exc)
-        warnings.append(f"VaR computation failed: {exc}")
+        warnings.append(f"Sharpe failed: {exc}")
 
-    # ── I. Price data date range ──────────────────────────────────────
-    price_data_start = daily_dates[0] if daily_dates else None
-    price_data_end = daily_dates[-1] if daily_dates else None
+    # ── Max drawdown ──────────────────────────────────────────────────
+    max_dd = max_dd_start = max_dd_end = None
+    try:
+        peak   = np.maximum.accumulate(price_arr)
+        dd     = (price_arr - peak) / peak
+        max_dd = round(float(dd.min()), 4)
+        trough_idx = int(dd.argmin())
+        peak_idx   = int(price_arr[:trough_idx + 1].argmax())
+        if dates:
+            max_dd_start = dates[peak_idx][:7]
+            max_dd_end   = dates[trough_idx][:7]
+    except Exception as exc:
+        warnings.append(f"Max drawdown failed: {exc}")
+
+    # ── VaR 95% (historical simulation, daily) ───────────────────────
+    var_95 = None
+    try:
+        var_95 = round(float(np.percentile(log_rets, (1 - VAR_CONFIDENCE_LEVEL) * 100)), 4)
+    except Exception as exc:
+        warnings.append(f"VaR failed: {exc}")
 
     logger.info(
-        "Market risk computed: vol=%.4f, sharpe=%.4f, drawdown=%.4f, "
-        "var95=%.4f (%s to %s)",
-        historical_volatility or 0,
-        sharpe_ratio or 0,
-        max_drawdown or 0,
-        var_95_daily or 0,
-        price_data_start,
-        price_data_end,
+        "Market risk: beta=%.4f (%s), vol=%.4f, sharpe=%.4f, dd=%.4f, var95=%.4f",
+        beta_result["value"], beta_result["source"],
+        volatility or 0, sharpe or 0, max_dd or 0, var_95 or 0,
     )
 
     return {
         "beta": beta_result,
         "market_risk": {
-            "historical_volatility": historical_volatility,
-            "sharpe_ratio": sharpe_ratio,
-            "max_drawdown": max_drawdown,
-            "max_drawdown_start": max_drawdown_start,
-            "max_drawdown_end": max_drawdown_end,
-            "var_95_daily": var_95_daily,
-            "annualized_return": annualized_return,
+            "historical_volatility": volatility,
+            "sharpe_ratio":          sharpe,
+            "max_drawdown":          max_dd,
+            "max_drawdown_start":    max_dd_start,
+            "max_drawdown_end":      max_dd_end,
+            "var_95_daily":          var_95,
+            "annualized_return":     ann_return,
         },
-        "price_data_start": price_data_start,
-        "price_data_end": price_data_end,
         "warnings": warnings,
+    }
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _sector_beta(sector: str) -> float:
+    return SECTOR_AVG_BETAS.get(sector.upper(), DEFAULT_BETA)
+
+
+def _compute_beta(
+    stock_rets: np.ndarray,
+    sp500_prices: list,
+    sector: str,
+    warnings: list,
+) -> dict:
+    """OLS beta via numpy; Bloomberg-adjusted. Falls back to sector average."""
+    try:
+        if len(sp500_prices) >= 2:
+            bench_arr  = np.array(sp500_prices, dtype=float)
+            bench_rets = np.log(bench_arr[1:] / bench_arr[:-1])
+            n = min(len(stock_rets), len(bench_rets))
+            if n >= 252:
+                s, b  = stock_rets[-n:], bench_rets[-n:]
+                var_b = float(np.var(b, ddof=1))
+                if var_b > 0:
+                    raw  = float(np.cov(s, b)[0, 1] / var_b)
+                    adj  = round(0.67 * raw + 0.33 * 1.0, 4)  # Bloomberg adjustment
+                    return {"value": adj, "raw_beta": round(raw, 4), "source": "calculated"}
+    except Exception as exc:
+        warnings.append(f"Beta regression failed: {exc}")
+
+    fb = _sector_beta(sector)
+    warnings.append(f"Beta: sector average ({fb}) used — insufficient SP500 price data")
+    return {"value": fb, "raw_beta": None, "source": "industry_fallback"}
+
+
+def _empty_market_risk() -> dict:
+    return {
+        "historical_volatility": None,
+        "sharpe_ratio":          None,
+        "max_drawdown":          None,
+        "max_drawdown_start":    None,
+        "max_drawdown_end":      None,
+        "var_95_daily":          None,
+        "annualized_return":     None,
     }

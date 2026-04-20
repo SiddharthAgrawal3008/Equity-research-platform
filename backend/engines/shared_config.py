@@ -84,6 +84,14 @@ TV_CRITICAL_THRESHOLD: float = 0.90     # Strong warning if > 90 %
 DCF_EXTREME_HIGH: float = 10.0          # Flag if implied price > 10× current
 DCF_EXTREME_LOW: float = 0.1            # Flag if implied price < 0.1× current
 
+# ── 7b. REVERSE DCF PARAMETERS ────────────────────────────────────────
+
+REVERSE_DCF_TOLERANCE: float = 1e-6      # Bisection convergence tolerance (EV diff)
+REVERSE_DCF_MAX_ITER: int = 100          # Maximum bisection iterations
+REVERSE_DCF_GROWTH_LO: float = -0.30     # Search range lower bound (−30 %)
+REVERSE_DCF_GROWTH_HI: float = 0.50      # Search range upper bound (+50 %)
+REVERSE_DCF_OPTIMISM_BAND: float = 0.02  # ±2 pp = "In Line" with forward DCF
+
 # ── 8.  SECTOR AVERAGE BETAS ──────────────────────────────────────────
 # Source: Damodaran's adjusted sector betas.
 # Keys are UPPERCASE, matching Engine 1's meta.sector.
