@@ -103,13 +103,13 @@ def validate(output: Engine1Output) -> None:
                 year,
             )
 
-        # 3. free_cash_flow == operating_cash_flow + capital_expenditures
-        if f.free_cash_flow[i] is not None and f.operating_cash_flow[i] is not None and f.capital_expenditures[i] is not None:
+        # 3. free_cash_flow == operating_cash_flow + capex
+        if f.free_cash_flow[i] is not None and f.operating_cash_flow[i] is not None and f.capex[i] is not None:
             _check_cross(
                 warnings,
                 "free_cash_flow != OCF + capex",
                 f.free_cash_flow[i],
-                f.operating_cash_flow[i] + f.capital_expenditures[i],
+                f.operating_cash_flow[i] + f.capex[i],
                 year,
             )
 
@@ -134,7 +134,7 @@ def validate(output: Engine1Output) -> None:
     ANNUAL_FIELDS = [
         "revenue", "gross_profit", "ebit", "ebitda", "net_income",
         "interest_expense", "total_assets", "total_debt", "cash_and_equivalents",
-        "operating_cash_flow", "capital_expenditures", "cost_of_revenue",
+        "operating_cash_flow", "capex", "cost_of_revenue",
         "depreciation_amortisation", "pre_tax_income", "tax_expense",
         "total_equity", "net_working_capital", "net_debt", "long_term_debt",
         "free_cash_flow",
