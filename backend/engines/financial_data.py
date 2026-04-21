@@ -37,6 +37,8 @@ from typing import Any
 
 import requests
 
+from backend.engines.shared_config import AV_API_KEYS
+
 logger = logging.getLogger(__name__)
 
 AV_BASE_URL = "https://www.alphavantage.co/query"
@@ -87,14 +89,31 @@ class DataFetchError(Exception):
 # Internal Helpers
 # ---------------------------------------------------------------------------
 
-def _get_av_key() -> str:
-    """Read ALPHA_VANTAGE_API_KEY from environment."""
-    key = os.environ.get("ALPHA_VANTAGE_API_KEY", "").strip()
-    if not key:
-        raise DataFetchError(
-            "ALPHA_VANTAGE_API_KEY environment variable is not set."
-        )
-    return key
+# ---------------------------------------------------------------------------
+# AV key pool — env key goes first (backward compat), then hardcoded list
+# ---------------------------------------------------------------------------
+
+def _build_av_key_pool() -> list[str]:
+    """Return ordered key pool. ALPHA_VANTAGE_API_KEY from .env is tried first."""
+    env_key = os.environ.get("ALPHA_VANTAGE_API_KEY", "").strip()
+    if env_key:
+        return [env_key] + [k for k in AV_API_KEYS if k != env_key]
+    return list(AV_API_KEYS)
+
+
+_AV_KEY_POOL: list[str] = []   # populated lazily on first call
+_AV_KEY_INDEX: int = 0         # current position in the pool
+
+
+def _get_av_key_pool() -> list[str]:
+    global _AV_KEY_POOL
+    if not _AV_KEY_POOL:
+        _AV_KEY_POOL = _build_av_key_pool()
+    return _AV_KEY_POOL
+
+
+class _RateLimitError(Exception):
+    """Internal signal: AV returned a rate-limit or plan-limit response."""
 
 
 def _get_fh_key() -> str:
@@ -107,20 +126,11 @@ def _get_fh_key() -> str:
     return key
 
 
-def _av_get(function: str, symbol: str, av_key: str) -> dict:
+def _av_get_raw(function: str, symbol: str, av_key: str) -> dict:
     """
-    Call Alpha Vantage and return the parsed JSON response.
-
-    Args:
-        function: AV function name, e.g. "OVERVIEW", "INCOME_STATEMENT"
-        symbol:   Ticker symbol, e.g. "AAPL"
-        av_key:   Alpha Vantage API key
-
-    Returns:
-        Parsed JSON response dict.
-
-    Raises:
-        DataFetchError: On timeout, connection error, or non-200 response.
+    Single attempt: call Alpha Vantage with one key and return the JSON.
+    Raises _RateLimitError on rate-limit/plan-limit responses so the caller
+    can rotate to the next key. Raises DataFetchError on network failures.
     """
     params: dict[str, Any] = {
         "function": function,
@@ -133,13 +143,9 @@ def _av_get(function: str, symbol: str, av_key: str) -> dict:
         data = response.json()
         # AV signals rate limits / plan restrictions via these keys instead of HTTP errors.
         if "Information" in data:
-            raise DataFetchError(
-                f"Alpha Vantage API limit reached for '{function}': {data['Information']}"
-            )
+            raise _RateLimitError(data["Information"])
         if "Note" in data:
-            raise DataFetchError(
-                f"Alpha Vantage rate limit for '{function}': {data['Note']}"
-            )
+            raise _RateLimitError(data["Note"])
         return data
     except requests.exceptions.Timeout as exc:
         raise DataFetchError(
@@ -159,6 +165,32 @@ def _av_get(function: str, symbol: str, av_key: str) -> dict:
         raise DataFetchError(
             f"Unexpected error calling Alpha Vantage '{function}': {exc}"
         ) from exc
+
+
+def _av_get(function: str, symbol: str) -> dict:
+    """
+    Call Alpha Vantage with automatic key rotation on rate-limit responses.
+    Cycles through all keys in the pool before giving up.
+
+    Raises:
+        DataFetchError: If all keys are rate-limited or a network error occurs.
+    """
+    global _AV_KEY_INDEX
+    pool = _get_av_key_pool()
+    n = len(pool)
+
+    for attempt in range(n):
+        key = pool[_AV_KEY_INDEX % n]
+        try:
+            return _av_get_raw(function, symbol, key)
+        except _RateLimitError:
+            print(f"AV key {(_AV_KEY_INDEX % n) + 1}/{n} rate-limited, switching to next key...")
+            _AV_KEY_INDEX = (_AV_KEY_INDEX + 1) % n
+
+    raise DataFetchError(
+        f"All {n} Alpha Vantage API keys are rate-limited for '{function}'. "
+        "Please wait before retrying."
+    )
 
 
 def _fh_get(endpoint: str, params: dict, fh_key: str) -> dict:
@@ -246,11 +278,10 @@ def fetch_raw(ticker_symbol: str) -> dict:
     symbol = ticker_symbol.strip().upper()
     logger.info("Engine 1 | fetch_raw | starting pull for '%s'", symbol)
 
-    av_key = _get_av_key()
     fh_key = _get_fh_key()
 
     # ── 1. Company overview ─────────────────────────────────────────────────
-    overview = _av_get("OVERVIEW", symbol, av_key)
+    overview = _av_get("OVERVIEW", symbol)
 
     if not overview or overview.get("Symbol") is None:
         raise TickerNotFoundError(
@@ -262,18 +293,18 @@ def fetch_raw(ticker_symbol: str) -> dict:
 
     # ── 2. Income statement (annual + quarterly in one call) ────────────────
     time.sleep(1.2)
-    income_data      = _av_get("INCOME_STATEMENT", symbol, av_key)
+    income_data      = _av_get("INCOME_STATEMENT", symbol)
     annual_income    = income_data.get("annualReports", [])
     quarterly_income = income_data.get("quarterlyReports", [])
 
     # ── 3. Balance sheet (annual) ───────────────────────────────────────────
     time.sleep(1.2)
-    balance_data   = _av_get("BALANCE_SHEET", symbol, av_key)
+    balance_data   = _av_get("BALANCE_SHEET", symbol)
     annual_balance = balance_data.get("annualReports", [])
 
     # ── 4. Cash flow (annual + quarterly in one call) ───────────────────────
     time.sleep(1.2)
-    cashflow_data      = _av_get("CASH_FLOW", symbol, av_key)
+    cashflow_data      = _av_get("CASH_FLOW", symbol)
     annual_cashflow    = cashflow_data.get("annualReports", [])
     quarterly_cashflow = cashflow_data.get("quarterlyReports", [])
 
