@@ -72,6 +72,12 @@ def compute_ttm(output: Engine1Output, raw: dict) -> Engine1Output:
         q_inc = q_inc[-ttm_quarters_included:]
         q_cf  = q_cf[-ttm_quarters_included:]
 
+        # >>> TEMPORARY DIAGNOSTIC — remove before merge <<<
+        print("=== TTM interestExpense raw values ===")
+        for q in q_inc:
+            print(f"  {q.get('fiscalDateEnding')}  raw={q.get('interestExpense')!r}  type={type(q.get('interestExpense')).__name__}")
+        print("======================================")
+
         # TTM as-of date: fiscalDateEnding of the most recent quarter
         ttm_as_of_date = quarterly_income[-1]["fiscalDateEnding"] if quarterly_income else None
 
