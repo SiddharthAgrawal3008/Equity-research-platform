@@ -72,12 +72,6 @@ def compute_ttm(output: Engine1Output, raw: dict) -> Engine1Output:
         q_inc = q_inc[-ttm_quarters_included:]
         q_cf  = q_cf[-ttm_quarters_included:]
 
-        # >>> TEMPORARY DIAGNOSTIC — remove before merge <<<
-        print("=== TTM interestExpense raw values ===")
-        for q in q_inc:
-            print(f"  {q.get('fiscalDateEnding')}  raw={q.get('interestExpense')!r}  type={type(q.get('interestExpense')).__name__}")
-        print("======================================")
-
         # TTM as-of date: fiscalDateEnding of the most recent quarter
         ttm_as_of_date = quarterly_income[-1]["fiscalDateEnding"] if quarterly_income else None
 
@@ -93,6 +87,23 @@ def compute_ttm(output: Engine1Output, raw: dict) -> Engine1Output:
         net_income          = _sum_field(q_inc, "netIncome")
         interest_expense    = _sum_field(q_inc, "interestExpense")
         operating_cash_flow = _sum_field(q_cf,  "operatingCashflow")
+
+        # ── interest_expense fallback: quarterly AV data is often sparse ─────
+        # If the summed quarterly value is missing, zero, or < 50% of the most
+        # recent annual value, fall back to the annual figure.
+        annual_interest = (
+            output.financials.interest_expense[-1]
+            if output.financials.interest_expense
+            else None
+        )
+        if annual_interest is not None and annual_interest > 0:
+            raw_ttm = interest_expense
+            if raw_ttm is None or raw_ttm == 0 or raw_ttm < 0.5 * annual_interest:
+                interest_expense = annual_interest
+                output.quality["warnings"].append(
+                    f"TTM interest_expense unreliable from quarterly data ({raw_ttm}) "
+                    f"— using most recent annual value ({annual_interest})."
+                )
 
         # Capex: sum then negate if positive (same sign fix as annual standardizer)
         capex_raw = _sum_field(q_cf, "capitalExpenditures")
