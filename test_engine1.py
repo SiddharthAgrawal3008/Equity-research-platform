@@ -1,15 +1,17 @@
 """
 Engine 1 — Quick validation test.
-Run from the project root: python test_engine1.py
+Run from the project root: python test_engine1.py [TICKER]
+Default ticker is AAPL.
 """
 import os
+import sys
 from dotenv import load_dotenv
 load_dotenv()
 
 from backend.engines.financial_data import fetch_raw
 from backend.engines.engine1_standardizer import standardize
 
-TICKER = "AAPL"
+TICKER = sys.argv[1].upper() if len(sys.argv) > 1 else "AAPL"
 
 print(f"Fetching {TICKER} from Alpha Vantage + Finnhub...")
 raw = fetch_raw(TICKER)
