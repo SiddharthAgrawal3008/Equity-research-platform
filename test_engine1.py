@@ -116,3 +116,21 @@ out = compute_ttm(out, raw)
 print("\n=== TTM ===")
 for k, v in out.ttm.items():
     print(f"  {k}: {v}")
+
+from backend.engines.engine1_market_data import build_market_data
+market_data, md_warnings = build_market_data(out.meta.ticker, out.meta.current_price)
+out.market_data = market_data
+out.quality["warnings"].extend(md_warnings)
+print("\n=== MARKET DATA ===")
+print(f"  daily_close  : {len(out.market_data['daily_close'])} pts  first={out.market_data['daily_close'][:1]}  last={out.market_data['daily_close'][-1:]}")
+print(f"  daily_dates  : {out.market_data['daily_dates'][:1]} … {out.market_data['daily_dates'][-1:]}")
+print(f"  weekly_close : {len(out.market_data['weekly_close'])} pts  first={out.market_data['weekly_close'][:1]}  last={out.market_data['weekly_close'][-1:]}")
+print(f"  weekly_dates : {out.market_data['weekly_dates'][:1]} … {out.market_data['weekly_dates'][-1:]}")
+print(f"  bench daily  : {len(out.market_data['benchmark_daily_close'])} pts")
+print(f"  bench weekly : {len(out.market_data['benchmark_weekly_close'])} pts")
+print(f"  current_price: {out.market_data['current_price']}")
+print(f"  benchmark    : {out.market_data['benchmark_ticker']}")
+if md_warnings:
+    print("\n=== MARKET DATA WARNINGS ===")
+    for w in md_warnings:
+        print(f"  - {w}")

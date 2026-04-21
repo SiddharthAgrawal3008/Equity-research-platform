@@ -186,18 +186,16 @@ class Engine1Output:
     # Engine 2 MUST check quality['is_valid'] before running any valuation.
     # If is_valid is False, Engine 2 must raise an error or mark output as UNRELIABLE.
     quality: dict
-    # Keys:
-    #   is_valid               (bool)       — False = critical data issues found
-    #   missing_fields         (list[str])  — field names that are None/missing
-    #   warnings               (list[str])  — non-critical, e.g. "R&D not reported"
-    #   errors                 (list[str])  — critical, e.g. "Balance sheet does not balance"
-    #   net_income_cf_reconciled (bool)     — net income matches CF statement starting point
-    #   balance_sheet_balanced (bool)       — assets == liabilities + equity
-    #   debt_change_reconciled (bool)       — BS debt change matches financing CF
-    #   is_bank                (bool)       — Engine 2 adjusts WACC logic for banks
-    #   is_reit                (bool)       — Engine 2 uses FFO instead of FCF
-    #   is_negative_equity     (bool)       — P/B and D/E ratios unreliable
-    #   years_of_history       (int)        — how many annual periods loaded successfully
+
+    # ── Market Data (for Engine 3) ────────────────────────────────────────────
+    # Populated by Engine 1 Step 5 (engine1_market_data.build_market_data).
+    # Engine 3 reads this to compute beta, volatility, Sharpe, drawdown, VaR.
+    # Engine 2 and Engine 5 do NOT read market_data.
+    # Keys: daily_close, daily_dates, weekly_close, weekly_dates,
+    #       benchmark_daily_close, benchmark_daily_dates,
+    #       benchmark_weekly_close, benchmark_weekly_dates,
+    #       current_price, benchmark_ticker
+    market_data: dict = field(default_factory=dict)
 
 
 # ── ENGINE 3 OUTPUT ───────────────────────────────────────────────────────────
