@@ -134,3 +134,17 @@ if md_warnings:
     print("\n=== MARKET DATA WARNINGS ===")
     for w in md_warnings:
         print(f"  - {w}")
+
+from backend.engines.engine1_validator import validate
+validate(out)
+print("\n=== VALIDATION RESULTS ===")
+print(f"  is_valid:                  {out.quality['is_valid']}")
+print(f"  balance_sheet_balanced:    {out.quality.get('balance_sheet_balanced')}")
+print(f"  is_negative_equity:        {out.quality.get('is_negative_equity')}")
+print(f"  net_income_cf_reconciled:  {out.quality.get('net_income_cf_reconciled')}")
+print(f"  errors ({len(out.quality['errors'])}):")
+for e in out.quality["errors"]:
+    print(f"    [ERROR] {e}")
+print(f"  warnings ({len(out.quality['warnings'])}):")
+for w in out.quality["warnings"]:
+    print(f"    [WARN]  {w}")
