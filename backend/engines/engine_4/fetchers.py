@@ -17,56 +17,99 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from backend.engines.shared_config import FMP_API_KEY
+from backend.engines.shared_config import FMP_API_KEY, SEC_USER_AGENT
 
 logger = logging.getLogger(__name__)
 
 # BOTTLENECK: raise this value to tolerate slow APIs, or lower it to fail fast.
 # Each of the three document fetchers waits up to this many seconds independently.
 _HTTP_TIMEOUT_S: float = 5.0
+
+# Generic UA for FMP (no special policy). SEC calls use SEC_USER_AGENT instead.
 _HTTP_USER_AGENT: str = (
-    "Equity-Research-Platform/1.0 (engine_4_nlp; contact: team@example.com)"
+    "Equity-Research-Platform/1.0 (engine_4_nlp)"
 )
 
 _FMP_BASE = "https://financialmodelingprep.com/api/v3"
 _EDGAR_SEARCH = "https://efts.sec.gov/LATEST/search-index"
 
 
+def _sec_user_agent_is_placeholder(ua: str) -> bool:
+    """True if the configured SEC UA looks like a default/example stub."""
+    low = (ua or "").lower()
+    return (
+        not low.strip()
+        or "example.com" in low
+        or "equity-research.dev" in low  # our own default — fine for dev, warn in prod
+        or "@example" in low
+        or "todo" in low
+        or "replace" in low
+    )
+
+
 # ── HTTP primitives ───────────────────────────────────────────────────
 
-def _http_get(url: str, timeout: float = _HTTP_TIMEOUT_S) -> str | None:
-    # BOTTLENECK: blocking network call — the primary source of wall-time latency
-    # in Engine 4. Returns None (not an exception) on any network failure so
-    # callers can degrade gracefully without try/except.
-    req = urllib.request.Request(url, headers={"User-Agent": _HTTP_USER_AGENT})
+def _http_get(
+    url: str,
+    timeout: float = _HTTP_TIMEOUT_S,
+    extra_headers: dict | None = None,
+) -> tuple[int | None, str | None]:
+    """Perform a GET and return (status_code, body).
+
+    - On HTTP error (4xx/5xx): returns (status_code, None).
+    - On network failure (timeout, DNS, connection refused): returns (None, None).
+    - On success: returns (200-ish, body_text).
+
+    BOTTLENECK: blocking network call — the primary source of wall-time latency
+    in Engine 4. Never raises so callers can report precise warnings.
+    """
+    headers = {"User-Agent": _HTTP_USER_AGENT, "Accept": "application/json, */*"}
+    if extra_headers:
+        headers.update(extra_headers)
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             charset = resp.headers.get_content_charset() or "utf-8"
-            return resp.read().decode(charset, errors="replace")
-    except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout, OSError) as exc:
-        logger.debug("HTTP GET failed for %s: %s", url, exc)
-        return None
+            return resp.status, resp.read().decode(charset, errors="replace")
+    except urllib.error.HTTPError as exc:
+        logger.debug("HTTP %s for %s", exc.code, url)
+        return exc.code, None
+    except (urllib.error.URLError, socket.timeout, OSError) as exc:
+        logger.debug("Network error for %s: %s", url, exc)
+        return None, None
 
 
-def _http_get_json(url: str, timeout: float = _HTTP_TIMEOUT_S):
-    raw = _http_get(url, timeout=timeout)
-    if raw is None:
-        return None
+def _http_get_json(
+    url: str,
+    timeout: float = _HTTP_TIMEOUT_S,
+    extra_headers: dict | None = None,
+) -> tuple[int | None, object | None]:
+    """Like _http_get but decodes JSON. Returns (status, parsed_or_None)."""
+    status, body = _http_get(url, timeout=timeout, extra_headers=extra_headers)
+    if body is None:
+        return status, None
     try:
-        return json.loads(raw)
+        return status, json.loads(body)
     except json.JSONDecodeError:
-        return None
+        return status, None
 
 
-def _fetch_with_retry(url: str, retries: int = 1) -> str | None:
-    # BOTTLENECK: with retries=1 (default), a failed request doubles the wait
-    # time for that fetcher (up to 2 × _HTTP_TIMEOUT_S = 10 s).
-    result = _http_get(url)
+def _fetch_with_retry(
+    url: str,
+    retries: int = 1,
+    extra_headers: dict | None = None,
+) -> tuple[int | None, str | None]:
+    """Retry only on transient network errors (status is None). 4xx are fatal.
+
+    BOTTLENECK: with retries=1, a transient failure doubles the wait time for
+    that fetcher (up to 2 × _HTTP_TIMEOUT_S).
+    """
+    status, body = _http_get(url, extra_headers=extra_headers)
     attempts = 0
-    while result is None and attempts < retries:
+    while body is None and status is None and attempts < retries:
         attempts += 1
-        result = _http_get(url)
-    return result
+        status, body = _http_get(url, extra_headers=extra_headers)
+    return status, body
 
 
 def _fmp_enabled() -> bool:
@@ -110,9 +153,14 @@ def fetch_fmp_transcripts(
         f"{urllib.parse.quote(ticker)}"
         f"?apikey={urllib.parse.quote(FMP_API_KEY)}&limit={int(limit)}"
     )
-    raw = _fetch_with_retry(url, retries=1)
+    status, raw = _fetch_with_retry(url, retries=1)
     if raw is None:
-        warnings.append("FMP transcript fetch failed — proceeding without transcripts")
+        if status == 401 or status == 403:
+            warnings.append(f"FMP returned {status} — check FMP_API_KEY validity")
+        elif status is not None:
+            warnings.append(f"FMP transcript fetch returned HTTP {status}")
+        else:
+            warnings.append("FMP transcript fetch failed — network unreachable")
         return []
 
     try:
@@ -161,7 +209,7 @@ def fetch_fmp_press_releases(
         f"{urllib.parse.quote(ticker)}"
         f"?apikey={urllib.parse.quote(FMP_API_KEY)}&limit={int(limit)}"
     )
-    payload = _http_get_json(url)
+    _status, payload = _http_get_json(url)
     if not isinstance(payload, list):
         return []
 
@@ -185,6 +233,21 @@ def fetch_fmp_press_releases(
     return out
 
 
+def _edgar_headers() -> dict:
+    """Headers required by SEC EDGAR's fair-access policy.
+
+    SEC expects a real User-Agent with contact info; default/placeholder UAs
+    may be rate-limited or 403-blocked. Also sets Host and Accept per the
+    search-index endpoint's contract.
+    """
+    return {
+        "User-Agent":      SEC_USER_AGENT,
+        "Accept":          "application/json",
+        "Accept-Encoding": "gzip, deflate",
+        "Host":            "efts.sec.gov",
+    }
+
+
 def fetch_edgar_10k(
     ticker: str, warnings: list[str], limit: int = 2,
 ) -> list[dict]:
@@ -193,19 +256,55 @@ def fetch_edgar_10k(
     Returns up to `limit` annual_report documents. Full 10-K body text
     extraction is deferred to a later phase; snippet text is used as proxy.
 
+    Graceful failure modes (empty list + specific warning):
+        - 403: UA placeholder or SEC block → set SEC_USER_AGENT env var
+        - 429: rate-limited by SEC → slow down calling frequency
+        - 4xx/5xx: surfaced with status code for debugging
+        - network error: unreachable / sandboxed / offline
+        - empty hits: ticker has no 10-K on file (valid result)
+
     NOTE: Only the EDGAR search-index highlight snippet is stored as `text`,
     not the full 10-K filing. This limits red-flag and theme signal from annual
     reports. Fetching and parsing the full filing would improve quality but
     increase both network time and downstream CPU cost significantly.
     """
+    if _sec_user_agent_is_placeholder(SEC_USER_AGENT):
+        warnings.append(
+            "SEC_USER_AGENT is a placeholder — SEC may block requests. "
+            "Set SEC_USER_AGENT env var to 'Your Name you@yourdomain.com' "
+            "(see https://www.sec.gov/os/accessing-edgar-data)"
+        )
+
     query = urllib.parse.quote(f'"{ticker}" "management discussion"')
     url = f"{_EDGAR_SEARCH}?q={query}&forms=10-K"
-    payload = _http_get_json(url)
+    status, payload = _http_get_json(url, extra_headers=_edgar_headers())
+
+    if payload is None:
+        if status == 403:
+            warnings.append(
+                "EDGAR returned 403 Forbidden — SEC rejected the User-Agent. "
+                "Set the SEC_USER_AGENT env var to a real contact email."
+            )
+        elif status == 429:
+            warnings.append(
+                "EDGAR returned 429 — rate-limited by SEC (10 req/sec cap). "
+                "Reduce call frequency or batch requests."
+            )
+        elif status is not None:
+            warnings.append(f"EDGAR search returned HTTP {status} — no annual reports")
+        else:
+            warnings.append("EDGAR unreachable (network error) — no annual reports")
+        return []
+
     if not isinstance(payload, dict):
-        warnings.append("EDGAR search unavailable — no annual reports fetched")
+        warnings.append("EDGAR search returned non-dict payload — no annual reports")
         return []
 
     hits = (payload.get("hits") or {}).get("hits") or []
+    if not hits:
+        warnings.append(f"EDGAR full-text search returned no 10-K hits for {ticker}")
+        return []
+
     out: list[dict] = []
     for hit in hits[:limit]:
         if not isinstance(hit, dict):

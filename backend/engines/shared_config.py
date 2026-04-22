@@ -26,6 +26,8 @@ Update cadence
   revision.
 """
 
+import os
+
 # ── 1.  MARKET PARAMETERS ──────────────────────────────────────────────
 
 RISK_FREE_RATE: float = 0.043            # 10-year US Treasury yield (4.3 %)
@@ -174,8 +176,18 @@ CONFIDENCE_THRESHOLDS: dict[str, float] = {
 
 # ── 13. ENGINE 4 — NLP INTELLIGENCE PARAMETERS ────────────────────────
 
-FMP_API_KEY: str = ""                    # Paid key injected here when available;
-                                         # empty string → E4 falls back to EDGAR only
+FMP_API_KEY: str = os.environ.get("FMP_API_KEY", "")  # Paid key injected here when available;
+                                                      # empty string → E4 falls back to EDGAR only
+
+# SEC EDGAR fair-access policy requires a User-Agent with a real contact email.
+# Placeholder addresses (example.com, team@example.com) can be rate-limited or blocked.
+# Override via the SEC_USER_AGENT env var in production deployments.
+# Policy: https://www.sec.gov/os/accessing-edgar-data
+SEC_USER_AGENT: str = os.environ.get(
+    "SEC_USER_AGENT",
+    "Equity Research Platform research@equity-research.dev",
+)
+
 RISK_WORD_THRESHOLD: float = 0.07        # E4 outputs raw frequency only;
                                          # E5 applies this threshold to flag high risk
 NLP_LOOKBACK_QUARTERS: int = 4           # Transcripts analysed for trend detection

@@ -382,6 +382,54 @@ def test_live_fetchers_return_empty_without_network():
     )
 
 
+# ── 11. EDGAR diagnostic warnings — map status codes to clear messages ─
+def test_edgar_403_emits_actionable_warning():
+    """When SEC returns 403, the warning should tell the user to fix the UA."""
+    orig = _fetchers._http_get_json
+    _fetchers._http_get_json = lambda *_a, **_kw: (403, None)
+    warnings: list[str] = []
+    try:
+        out = _fetchers.fetch_edgar_10k("AAPL", warnings, limit=1)
+    finally:
+        _fetchers._http_get_json = orig
+    assert out == []
+    joined = " ".join(warnings)
+    assert "403" in joined and "SEC_USER_AGENT" in joined, (
+        f"403 warning should mention SEC_USER_AGENT fix, got {warnings!r}"
+    )
+
+
+def test_edgar_429_emits_ratelimit_warning():
+    orig = _fetchers._http_get_json
+    _fetchers._http_get_json = lambda *_a, **_kw: (429, None)
+    warnings: list[str] = []
+    try:
+        _fetchers.fetch_edgar_10k("AAPL", warnings, limit=1)
+    finally:
+        _fetchers._http_get_json = orig
+    assert any("429" in w and "rate" in w.lower() for w in warnings), warnings
+
+
+def test_edgar_no_hits_for_unknown_ticker():
+    """Valid empty response → specific 'no hits' warning, not a generic error."""
+    orig = _fetchers._http_get_json
+    _fetchers._http_get_json = lambda *_a, **_kw: (200, {"hits": {"hits": []}})
+    warnings: list[str] = []
+    try:
+        out = _fetchers.fetch_edgar_10k("ZZZZ", warnings, limit=1)
+    finally:
+        _fetchers._http_get_json = orig
+    assert out == []
+    assert any("no 10-K hits" in w for w in warnings), warnings
+
+
+def test_sec_ua_placeholder_detector():
+    assert _fetchers._sec_user_agent_is_placeholder("")
+    assert _fetchers._sec_user_agent_is_placeholder("Company name@example.com")
+    assert _fetchers._sec_user_agent_is_placeholder("TODO set real UA")
+    assert not _fetchers._sec_user_agent_is_placeholder("Annant Research annant@mydomain.io")
+
+
 # ── Fetcher patch helpers ────────────────────────────────────────────
 _orig_fetchers: dict = {}
 
@@ -442,6 +490,11 @@ TESTS = [
     ("guidance_tone_negative",              test_guidance_tone_negative),
     # live fetchers
     ("live_fetchers_degrade_gracefully",    test_live_fetchers_return_empty_without_network),
+    # EDGAR diagnostic warnings
+    ("edgar_403_emits_actionable_warning",  test_edgar_403_emits_actionable_warning),
+    ("edgar_429_emits_ratelimit_warning",   test_edgar_429_emits_ratelimit_warning),
+    ("edgar_no_hits_for_unknown_ticker",    test_edgar_no_hits_for_unknown_ticker),
+    ("sec_ua_placeholder_detector",         test_sec_ua_placeholder_detector),
 ]
 
 
