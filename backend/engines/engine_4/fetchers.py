@@ -48,6 +48,13 @@ def _sec_user_agent_is_placeholder(ua: str) -> bool:
 
 # ── HTTP primitives ───────────────────────────────────────────────────
 
+# Module-level snapshot of the most recent HTTP error body (first 200 chars).
+# Populated by _http_get on 4xx/5xx so callers can surface the actual server
+# response in warnings — crucial for distinguishing "SEC rejected the UA" from
+# "corporate proxy blocked the request" since both return 403.
+_last_error_body: str = ""
+
+
 def _http_get(
     url: str,
     timeout: float = _HTTP_TIMEOUT_S,
@@ -55,13 +62,16 @@ def _http_get(
 ) -> tuple[int | None, str | None]:
     """Perform a GET and return (status_code, body).
 
-    - On HTTP error (4xx/5xx): returns (status_code, None).
+    - On HTTP error (4xx/5xx): returns (status_code, None); error body is
+      captured in module-level _last_error_body for diagnostic warnings.
     - On network failure (timeout, DNS, connection refused): returns (None, None).
-    - On success: returns (200-ish, body_text).
+    - On success: returns (2xx_status, body_text).
 
     BOTTLENECK: blocking network call — the primary source of wall-time latency
     in Engine 4. Never raises so callers can report precise warnings.
     """
+    global _last_error_body
+    _last_error_body = ""
     headers = {"User-Agent": _HTTP_USER_AGENT, "Accept": "application/json, */*"}
     if extra_headers:
         headers.update(extra_headers)
@@ -71,7 +81,11 @@ def _http_get(
             charset = resp.headers.get_content_charset() or "utf-8"
             return resp.status, resp.read().decode(charset, errors="replace")
     except urllib.error.HTTPError as exc:
-        logger.debug("HTTP %s for %s", exc.code, url)
+        try:
+            _last_error_body = exc.read().decode("utf-8", errors="replace")[:200].strip()
+        except Exception:
+            _last_error_body = ""
+        logger.debug("HTTP %s for %s: %s", exc.code, url, _last_error_body)
         return exc.code, None
     except (urllib.error.URLError, socket.timeout, OSError) as exc:
         logger.debug("Network error for %s: %s", url, exc)
@@ -279,18 +293,23 @@ def fetch_edgar_10k(
     status, payload = _http_get_json(url, extra_headers=_edgar_headers())
 
     if payload is None:
+        body_hint = f" response={_last_error_body!r}" if _last_error_body else ""
         if status == 403:
             warnings.append(
-                "EDGAR returned 403 Forbidden — SEC rejected the User-Agent. "
-                "Set the SEC_USER_AGENT env var to a real contact email."
+                f"EDGAR returned 403 Forbidden.{body_hint} "
+                "Either SEC rejected the User-Agent (set SEC_USER_AGENT to a "
+                "real 'Name email@domain' string) OR your network blocks "
+                "outbound requests (corporate proxy / sandbox / firewall)."
             )
         elif status == 429:
             warnings.append(
-                "EDGAR returned 429 — rate-limited by SEC (10 req/sec cap). "
+                f"EDGAR returned 429 — rate-limited by SEC (10 req/sec cap).{body_hint} "
                 "Reduce call frequency or batch requests."
             )
         elif status is not None:
-            warnings.append(f"EDGAR search returned HTTP {status} — no annual reports")
+            warnings.append(
+                f"EDGAR search returned HTTP {status}.{body_hint} No annual reports."
+            )
         else:
             warnings.append("EDGAR unreachable (network error) — no annual reports")
         return []

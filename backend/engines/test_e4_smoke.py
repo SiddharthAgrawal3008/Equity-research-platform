@@ -384,7 +384,7 @@ def test_live_fetchers_return_empty_without_network():
 
 # ── 11. EDGAR diagnostic warnings — map status codes to clear messages ─
 def test_edgar_403_emits_actionable_warning():
-    """When SEC returns 403, the warning should tell the user to fix the UA."""
+    """403 → warning must mention both possible causes (UA reject, proxy block)."""
     orig = _fetchers._http_get_json
     _fetchers._http_get_json = lambda *_a, **_kw: (403, None)
     warnings: list[str] = []
@@ -394,8 +394,12 @@ def test_edgar_403_emits_actionable_warning():
         _fetchers._http_get_json = orig
     assert out == []
     joined = " ".join(warnings)
-    assert "403" in joined and "SEC_USER_AGENT" in joined, (
+    assert "403" in joined, f"403 warning should mention status, got {warnings!r}"
+    assert "SEC_USER_AGENT" in joined, (
         f"403 warning should mention SEC_USER_AGENT fix, got {warnings!r}"
+    )
+    assert "proxy" in joined.lower() or "network" in joined.lower() or "firewall" in joined.lower(), (
+        f"403 warning should acknowledge network-block possibility, got {warnings!r}"
     )
 
 
