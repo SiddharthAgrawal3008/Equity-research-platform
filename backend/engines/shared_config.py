@@ -179,13 +179,13 @@ CONFIDENCE_THRESHOLDS: dict[str, float] = {
 FMP_API_KEY: str = os.environ.get("FMP_API_KEY", "")  # Paid key injected here when available;
                                                       # empty string → E4 falls back to EDGAR only
 
-# SEC EDGAR fair-access policy requires a User-Agent with a real contact email.
-# Placeholder addresses (example.com, team@example.com) can be rate-limited or blocked.
-# Override via the SEC_USER_AGENT env var in production deployments.
+# SEC EDGAR fair-access policy requires a User-Agent with a real name + email.
+# Format: "Your Name your@email.com".  Override via the SEC_USER_AGENT env var
+# (or a .env file / Codespaces secret) in deployments.
 # Policy: https://www.sec.gov/os/accessing-edgar-data
 SEC_USER_AGENT: str = os.environ.get(
     "SEC_USER_AGENT",
-    "Equity Research Platform research@equity-research.dev",
+    "Annant Sharma meteorex7@gmail.com",
 )
 
 RISK_WORD_THRESHOLD: float = 0.07        # E4 outputs raw frequency only;

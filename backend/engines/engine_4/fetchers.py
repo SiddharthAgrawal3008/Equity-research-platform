@@ -40,7 +40,6 @@ def _sec_user_agent_is_placeholder(ua: str) -> bool:
     return (
         not low.strip()
         or "example.com" in low
-        or "equity-research.dev" in low  # our own default — fine for dev, warn in prod
         or "@example" in low
         or "todo" in low
         or "replace" in low
