@@ -21,6 +21,8 @@ from backend.engines.shared_config import FMP_API_KEY
 
 logger = logging.getLogger(__name__)
 
+# BOTTLENECK: raise this value to tolerate slow APIs, or lower it to fail fast.
+# Each of the three document fetchers waits up to this many seconds independently.
 _HTTP_TIMEOUT_S: float = 5.0
 _HTTP_USER_AGENT: str = (
     "Equity-Research-Platform/1.0 (engine_4_nlp; contact: team@example.com)"
@@ -33,6 +35,9 @@ _EDGAR_SEARCH = "https://efts.sec.gov/LATEST/search-index"
 # ── HTTP primitives ───────────────────────────────────────────────────
 
 def _http_get(url: str, timeout: float = _HTTP_TIMEOUT_S) -> str | None:
+    # BOTTLENECK: blocking network call — the primary source of wall-time latency
+    # in Engine 4. Returns None (not an exception) on any network failure so
+    # callers can degrade gracefully without try/except.
     req = urllib.request.Request(url, headers={"User-Agent": _HTTP_USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -54,6 +59,8 @@ def _http_get_json(url: str, timeout: float = _HTTP_TIMEOUT_S):
 
 
 def _fetch_with_retry(url: str, retries: int = 1) -> str | None:
+    # BOTTLENECK: with retries=1 (default), a failed request doubles the wait
+    # time for that fetcher (up to 2 × _HTTP_TIMEOUT_S = 10 s).
     result = _http_get(url)
     attempts = 0
     while result is None and attempts < retries:
@@ -185,6 +192,11 @@ def fetch_edgar_10k(
 
     Returns up to `limit` annual_report documents. Full 10-K body text
     extraction is deferred to a later phase; snippet text is used as proxy.
+
+    NOTE: Only the EDGAR search-index highlight snippet is stored as `text`,
+    not the full 10-K filing. This limits red-flag and theme signal from annual
+    reports. Fetching and parsing the full filing would improve quality but
+    increase both network time and downstream CPU cost significantly.
     """
     query = urllib.parse.quote(f'"{ticker}" "management discussion"')
     url = f"{_EDGAR_SEARCH}?q={query}&forms=10-K"

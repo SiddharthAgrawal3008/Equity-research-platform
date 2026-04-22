@@ -62,6 +62,9 @@ class NLPIntelligenceEngine(BaseEngine):
             )
 
             # ── Fetch documents ───────────────────────────────────────
+            # BOTTLENECK: all three fetches are sequential HTTP calls.
+            # Worst-case wall time ≈ 3 × _HTTP_TIMEOUT_S (15 s) if APIs are slow.
+            # To speed up, run these concurrently (e.g. ThreadPoolExecutor).
             try:
                 transcripts = fetch_fmp_transcripts(
                     ticker, warnings, limit=NLP_LOOKBACK_QUARTERS * 2,
@@ -94,6 +97,8 @@ class NLPIntelligenceEngine(BaseEngine):
                 source_coverage = valid_fallback_schema([])["source_coverage"]
 
             # ── Sentiment ─────────────────────────────────────────────
+            # CPU cost scales with total token count across all documents.
+            # Large 10-K snippets or many transcripts will slow this step.
             try:
                 sentiment = sentiment_scores(documents)
             except Exception as exc:
@@ -102,6 +107,8 @@ class NLPIntelligenceEngine(BaseEngine):
                 sentiment = valid_fallback_schema([])["sentiment"]
 
             # ── Red flags ─────────────────────────────────────────────
+            # CPU cost is O(documents × categories × patterns × text_len).
+            # Long annual-report texts are the most likely bottleneck here.
             try:
                 red_flags = red_flag_analysis(documents)
             except Exception as exc:
@@ -110,6 +117,8 @@ class NLPIntelligenceEngine(BaseEngine):
                 red_flags = valid_fallback_schema([])["red_flags"]
 
             # ── Key themes + financial alignment ──────────────────────
+            # CPU cost is O(documents × themes × keywords × text_len).
+            # Regex tokenisation per document adds overhead for large texts.
             try:
                 key_themes = key_themes_analysis(documents, financial_data)
             except Exception as exc:

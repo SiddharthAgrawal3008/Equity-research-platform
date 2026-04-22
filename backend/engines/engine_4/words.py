@@ -3,6 +3,11 @@ Engine 4 — Word Lists & Markers
 ================================
 Finance-domain lexicons for rule-based sentiment scoring.
 Expand entries without touching any scoring logic.
+
+PERFORMANCE NOTE: POSITIVE_WORDS, RISK_WORDS, and HEDGING_WORDS are checked via
+set membership (`in`) per token — O(1) per lookup, so expanding these sets has
+negligible CPU cost. GUIDANCE_MARKERS and QNA_MARKERS use str.find on full text;
+adding more markers increases the guidance-scoring loop in _score_block linearly.
 """
 
 POSITIVE_WORDS: set[str] = {

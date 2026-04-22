@@ -26,6 +26,9 @@ _TOKEN_RE = re.compile(r"[a-zA-Z]+")
 # ── Text primitives ───────────────────────────────────────────────────
 
 def _tokenize(text: str) -> list[str]:
+    # BOTTLENECK: regex finditer over full text; called once per document in
+    # sentiment_scores and once per document again in key_themes_analysis.
+    # For very large texts (10-K can be 100k+ words) this is the inner hotspot.
     if not text:
         return []
     return [m.group(0).lower() for m in _TOKEN_RE.finditer(text)]
@@ -62,6 +65,10 @@ def _score_block(text: str) -> dict:
 
     lower = text.lower()
     guidance_neg = guidance_pos = 0
+    # BOTTLENECK: for each GUIDANCE_MARKER, scans the entire text with str.find
+    # in a while-loop and tokenises a 120-char window around every hit.
+    # High-frequency markers ("expect", "outlook") can trigger dozens of
+    # iterations on a long transcript — this is the slowest line in sentiment scoring.
     for marker in GUIDANCE_MARKERS:
         idx = lower.find(marker)
         while idx != -1:
@@ -124,6 +131,9 @@ def _compute_sentiment_trend(
 
 def sentiment_scores(documents: list[dict]) -> dict:
     """Compute the full sentiment sub-object from available documents."""
+    # BOTTLENECK: calls _score_block (which includes the guidance-marker scan)
+    # for every document, plus a second pass on transcripts for Q&A splitting.
+    # Profile _score_block first if this function is slow.
     texts = [d for d in documents if d.get("text")]
     if not texts:
         return {
@@ -195,6 +205,9 @@ def sentiment_scores(documents: list[dict]) -> dict:
 # ── Red flag detection ────────────────────────────────────────────────
 
 def _detect_categories(text: str) -> dict[str, int]:
+    # BOTTLENECK: O(categories × patterns × text_len) — triple nested linear scan.
+    # Called once per document in red_flag_analysis; expensive for large 10-K texts.
+    # Worst case: 7 categories × 10 patterns × 100k-char text per document.
     if not text:
         return {cat: 0 for cat in VALID_CATEGORIES}
     lower = text.lower()
@@ -279,6 +292,10 @@ def red_flag_analysis(documents: list[dict]) -> dict:
 # ── Theme extraction & financial alignment ────────────────────────────
 
 def _theme_hits(text: str) -> dict[str, int]:
+    # BOTTLENECK: same nested-scan pattern as _detect_categories.
+    # Called twice per transcript in key_themes_analysis (once for latest, once
+    # for each prior doc), so total cost is O(transcripts² × keywords × text_len)
+    # when many historical transcripts are loaded.
     if not text:
         return {theme: 0 for theme in THEME_KEYWORDS}
     lower = text.lower()
@@ -376,6 +393,9 @@ def _financial_alignment(themes: list[str], financial_data: dict) -> str | None:
 
 def key_themes_analysis(documents: list[dict], financial_data: dict) -> dict:
     """Extract top themes + detect emerging/fading themes across periods."""
+    # BOTTLENECK: _tokenize + _theme_hits are both called per document for the
+    # total pass, then _theme_hits is called again per transcript for the
+    # emerging/fading comparison. For N transcripts, _theme_hits runs N+1 times.
     scorable = [d for d in documents if d.get("text")]
     if not scorable:
         return {

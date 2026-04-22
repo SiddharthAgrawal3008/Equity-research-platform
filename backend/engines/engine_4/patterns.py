@@ -17,6 +17,10 @@ VALID_CATEGORIES: list[str] = [
 # Minimum total hits across all docs for a category to fire.
 CATEGORY_MIN_HITS: int = 2
 
+# PERFORMANCE NOTE: every pattern string in RED_FLAG_PATTERNS and every keyword
+# in THEME_KEYWORDS is matched via str.find across every document in analysis.py.
+# Adding more patterns / keywords increases CPU cost linearly — keep lists lean.
+
 RED_FLAG_PATTERNS: dict[str, tuple[str, ...]] = {
     "supply_chain": (
         "supply chain", "disruption", "shortage", "bottleneck",
