@@ -18,8 +18,17 @@ MOCK_FINANCIAL_DATA: dict = {
     },
 
     "quality": {
+        "is_valid": True,
         "is_bank": False,
         "is_reit": False,
+        "is_negative_equity": False,
+        "years_of_history": 6,
+        "missing_fields": ["interest_expense_2024", "interest_expense_2025"],
+        "warnings": [
+            "Interest expense missing for FY2024 and FY2025 — cost of debt "
+            "will use last available value (FY2023: $3,933M)"
+        ],
+        "errors": [],
     },
 
     "years": [2020, 2021, 2022, 2023, 2024, 2025],
@@ -49,6 +58,14 @@ MOCK_FINANCIAL_DATA: dict = {
         # ── Cash Flow (USD millions) ──────────────────────────────
         "operating_cash_flow": [80674.0,  104038.0, 122151.0, 110543.0, 118254.0, 111482.0],
         "free_cash_flow":      [73365.0,  92953.0,  111443.0, 99584.0,  108807.0, 100280.0],
+    },
+
+    # ── TTM (synthesised from last valid annual; Engine 1 will replace with real values) ──
+    "ttm": {
+        "revenue":          416161.0,
+        "ebitda":           144427.0,
+        "net_income":       112010.0,
+        "interest_expense": 3933.0,    # last available (FY2023); FY2024/2025 not yet filed
     },
 
     # ── Market Price Data (for Engine 3) ───────────────────────────────

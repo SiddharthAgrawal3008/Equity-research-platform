@@ -7,5 +7,5 @@ scipy==1.11.4
 reportlab==4.1.0
 supabase==2.3.4
 python-dotenv==1.0.0
-httpx==0.26.0
+httpx==0.25.2
 pydantic==2.5.3

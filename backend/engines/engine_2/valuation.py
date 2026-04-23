@@ -29,6 +29,7 @@ from backend.engines.shared_config import (
     TV_CRITICAL_THRESHOLD,
 )
 from backend.engines.engine_2.modules import (
+    prepare_fd,
     forecast_revenue_and_fcf,
     compute_wacc,
     compute_dcf,
@@ -113,13 +114,14 @@ class ValuationEngine(BaseEngine):
 
         Reads context["financial_data"], writes to context["valuation"].
         """
-        fd = context.get("financial_data", {})
+        fd = prepare_fd(context.get("financial_data", {}))
         warnings: list[str] = []
 
         # ── Pre-flight checks ──────────────────────────────────────
 
         quality = fd.get("quality", {})
-        if not quality.get("is_valid", False):
+        # Default is_valid to True — Engine 1 sets False when data is bad
+        if not quality.get("is_valid", True):
             errors = quality.get("errors", ["Data marked as invalid"])
             return self._assemble(
                 _failed_dcf("Invalid input data"),
@@ -130,7 +132,10 @@ class ValuationEngine(BaseEngine):
             )
 
         ttm = fd.get("ttm", {})
-        years_of_history = quality.get("years_of_history", 0)
+        # Fall back to revenue series length if Engine 1 didn't set this
+        years_of_history = quality.get("years_of_history") or len(
+            fd.get("financials", {}).get("revenue") or []
+        )
 
         # Pre-revenue check
         ttm_revenue = ttm.get("revenue", 0) or 0
@@ -209,7 +214,7 @@ class ValuationEngine(BaseEngine):
         if run_dcf and forecasts and wacc_result:
             try:
                 sensitivity_result = compute_sensitivity(
-                    forecasts, wacc_result["wacc"], fd, warnings
+                    forecasts, wacc_result["wacc"], fd
                 )
             except Exception as exc:
                 logger.exception("Module 5 (sensitivity) failed")

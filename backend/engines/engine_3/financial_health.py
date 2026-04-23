@@ -20,6 +20,7 @@ from backend.engines.shared_config import (
     ZSCORE_EXCLUDED_SECTORS,
     ZSCORE_SAFE,
 )
+from backend.engines.shared_utils.ttm import synthesise_ttm
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +56,8 @@ def compute_financial_health(financial_data: dict) -> dict:
     financials = financial_data.get("financials", {})
     meta = financial_data.get("meta", {})
     quality = financial_data.get("quality", {})
-    ttm = financial_data.get("ttm", {})
-    years = financials.get("years", [])  # years lives under financials, not financial_data
+    ttm = financial_data.get("ttm") or synthesise_ttm(financials)
+    years = financials.get("years") or financial_data.get("years", [])
 
     sector = meta.get("sector", "").upper()
     market_cap = meta.get("market_cap", 0) or 0
