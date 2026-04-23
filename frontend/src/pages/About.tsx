@@ -9,10 +9,10 @@ const values = [
 ];
 
 const team = [
-  { name: "Divyansh", role: "Engine 1 — Financial Data", bio: "Builds the data ingestion layer powering every downstream model." },
-  { name: "Siddharth", role: "Engine 2 + 3 — Valuation & Risk", bio: "Owns DCF, Monte Carlo and the firm's risk-scoring framework." },
-  { name: "Annant", role: "Engine 4 — NLP Intelligence", bio: "Designs the language models that read 10-Ks so you don't have to." },
-  { name: "Naman", role: "Engine 5 — Investment Memos", bio: "Synthesises the engines into IB-grade research notes, automatically." },
+  { name: "Divyansh", role: "Engine 1 — Financial Data", bio: "Builds the data ingestion layer powering every downstream model.", linkedin: "" },
+  { name: "Siddharth", role: "Engine 2 + 3 — Valuation & Risk", bio: "Owns DCF, Monte Carlo and the firm's risk-scoring framework.", linkedin: "https://linkedin.com/in/siddharth-agrawal-85521a248" },
+  { name: "Annant", role: "Engine 4 — NLP Intelligence", bio: "Designs the language models that read 10-Ks so you don't have to.", linkedin: "" },
+  { name: "Naman", role: "Engine 5 — Investment Memos", bio: "Synthesises the engines into IB-grade research notes, automatically.", linkedin: "" },
 ];
 
 export default function About() {
@@ -22,7 +22,7 @@ export default function About() {
         <div className="mx-auto max-w-3xl text-center">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">About</div>
           <h1 className="mt-3 text-balance font-display text-4xl font-semibold tracking-tight sm:text-5xl">
-            We're building the Bloomberg Terminal for the AI era.
+            We're building the Equity Research Terminal for the AI era.
           </h1>
           <p className="mt-6 text-base text-muted-foreground">
             EquiMind exists because deep equity research shouldn't be locked
@@ -69,7 +69,7 @@ export default function About() {
               <div className="space-y-2 p-5">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">{t.name}</h3>
-                  <a href="#" className="text-muted-foreground hover:text-accent">
+                  <a href={t.linkedin || "#"} target={t.linkedin ? "_blank" : undefined} rel={t.linkedin ? "noopener noreferrer" : undefined} className="text-muted-foreground hover:text-accent">
                     <Linkedin className="h-4 w-4" />
                   </a>
                 </div>
