@@ -1,0 +1,171 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* EquiMind — Institutional fintech design system.
+   Navy #061a30 + Gold #e8bb86 palette.
+   All colors HSL. Tokens only — never hard-code colors in components. */
+
+@layer base {
+  :root {
+    /* Surface */
+    --background: 32 30% 97%;           /* warm off-white */
+    --foreground: 211 78% 11%;          /* #061a30 deep navy */
+    --surface: 30 25% 99%;
+    --surface-muted: 32 20% 96%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 211 78% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 211 78% 11%;
+
+    /* Brand — Deep Navy */
+    --primary: 211 78% 11%;             /* #061a30 */
+    --primary-foreground: 32 30% 97%;
+    --primary-glow: 211 60% 18%;
+
+    /* Accent — Gold */
+    --accent: 32 68% 72%;               /* #e8bb86 */
+    --accent-foreground: 211 78% 11%;
+    --accent-soft: 32 60% 95%;
+
+    /* Secondary surfaces */
+    --secondary: 32 20% 95%;
+    --secondary-foreground: 211 78% 11%;
+
+    --muted: 32 15% 94%;
+    --muted-foreground: 211 20% 45%;
+
+    /* Signal colors */
+    --bull: 160 65% 40%;
+    --bull-foreground: 0 0% 100%;
+    --bear: 0 65% 55%;
+    --bear-foreground: 0 0% 100%;
+    --neutral: 32 80% 55%;
+    --neutral-foreground: 211 78% 11%;
+
+    --destructive: 0 65% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 32 20% 88%;
+    --input: 32 20% 88%;
+    --ring: 32 68% 72%;
+
+    --radius: 0.625rem;
+
+    /* Gradients */
+    --gradient-hero: radial-gradient(ellipse 80% 60% at 50% 0%, hsl(32 60% 95%) 0%, transparent 60%);
+    --gradient-navy: linear-gradient(135deg, hsl(211 78% 11%) 0%, hsl(211 60% 18%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(32 68% 72%) 0%, hsl(32 60% 60%) 100%);
+
+    /* Shadows */
+    --shadow-card: 0 1px 2px hsl(211 78% 11% / 0.04), 0 4px 16px hsl(211 78% 11% / 0.04);
+    --shadow-elevated: 0 8px 30px hsl(211 78% 11% / 0.08);
+    --shadow-glow: 0 0 0 1px hsl(32 68% 72% / 0.15), 0 8px 30px hsl(32 68% 72% / 0.18);
+
+    /* Sidebar (research terminal) */
+    --sidebar-background: 211 78% 11%;
+    --sidebar-foreground: 32 30% 88%;
+    --sidebar-primary: 32 68% 72%;
+    --sidebar-primary-foreground: 211 78% 11%;
+    --sidebar-accent: 211 60% 18%;
+    --sidebar-accent-foreground: 32 30% 97%;
+    --sidebar-border: 211 60% 18%;
+    --sidebar-ring: 32 68% 72%;
+  }
+
+  .dark {
+    --background: 211 60% 7%;
+    --foreground: 32 30% 95%;
+    --surface: 211 55% 10%;
+    --surface-muted: 211 50% 13%;
+
+    --card: 211 55% 10%;
+    --card-foreground: 32 30% 95%;
+
+    --popover: 211 55% 10%;
+    --popover-foreground: 32 30% 95%;
+
+    --primary: 32 30% 95%;
+    --primary-foreground: 211 78% 11%;
+    --primary-glow: 32 68% 72%;
+
+    --accent: 32 68% 72%;
+    --accent-foreground: 211 78% 11%;
+    --accent-soft: 211 50% 18%;
+
+    --secondary: 211 50% 14%;
+    --secondary-foreground: 32 30% 95%;
+
+    --muted: 211 50% 14%;
+    --muted-foreground: 32 20% 65%;
+
+    --bull: 160 60% 45%;
+    --bear: 0 65% 58%;
+    --neutral: 32 80% 55%;
+
+    --destructive: 0 65% 58%;
+    --destructive-foreground: 32 30% 95%;
+
+    --border: 211 45% 18%;
+    --input: 211 45% 18%;
+    --ring: 32 68% 72%;
+
+    --gradient-hero: radial-gradient(ellipse 80% 60% at 50% 0%, hsl(32 50% 18%) 0%, transparent 60%);
+    --gradient-navy: linear-gradient(135deg, hsl(211 60% 7%) 0%, hsl(211 55% 12%) 100%);
+
+    --shadow-card: 0 1px 2px hsl(0 0% 0% / 0.3), 0 4px 16px hsl(0 0% 0% / 0.2);
+    --shadow-elevated: 0 8px 30px hsl(0 0% 0% / 0.4);
+
+    --sidebar-background: 211 65% 5%;
+    --sidebar-foreground: 32 30% 88%;
+    --sidebar-primary: 32 68% 72%;
+    --sidebar-primary-foreground: 211 78% 11%;
+    --sidebar-accent: 211 55% 12%;
+    --sidebar-accent-foreground: 32 30% 95%;
+    --sidebar-border: 211 50% 14%;
+    --sidebar-ring: 32 68% 72%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+  }
+  h1, h2, h3, h4, h5 {
+    @apply font-display tracking-tight;
+  }
+}
+
+@layer utilities {
+  .font-mono-num {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .grid-bg {
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.6) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.6) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black 30%, transparent 75%);
+  }
+  .terminal-grid {
+    background-image:
+      linear-gradient(hsl(var(--sidebar-border) / 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--sidebar-border) / 0.5) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .text-balance { text-wrap: balance; }
+}

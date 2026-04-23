@@ -11,11 +11,10 @@ Five sequential computation modules:
 
 from __future__ import annotations
 
-from statistics import median
 from typing import Optional
 
-from backend.engines.financial_analysis import safe_divide
 from backend.engines.shared_utils.beta import compute_beta, prices_to_returns
+from backend.engines.shared_utils.ttm import synthesise_ttm
 from backend.engines.shared_config import (
     RISK_FREE_RATE,
     EQUITY_RISK_PREMIUM,
@@ -47,6 +46,12 @@ from backend.engines.shared_config import (
 # ── Helper Utilities ───────────────────────────────────────────────────
 
 
+def safe_divide(numerator, denominator, fallback=None):
+    if numerator is None or denominator is None or denominator == 0:
+        return fallback
+    return numerator / denominator
+
+
 def _safe_mean(values: list) -> Optional[float]:
     """Arithmetic mean ignoring None values. Returns None if empty."""
     valid = [v for v in values if v is not None]
@@ -65,6 +70,154 @@ def _last_valid(series: list) -> Optional[float]:
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
+
+
+def _trend(series: list) -> str:
+    valid = [v for v in series if v is not None]
+    if len(valid) < 4:
+        return "stable"
+    delta = sum(valid[-2:]) / 2 - sum(valid[:2]) / 2
+    if delta > 0.01:
+        return "improving"
+    if delta < -0.01:
+        return "deteriorating"
+    return "stable"
+
+
+# ── Pre-processing: normalize fd to a canonical shape ─────────────────
+
+
+def prepare_fd(fd: dict) -> dict:
+    """Return a copy of fd with all fields Engine 2 needs populated.
+
+    Computes missing financials, TTM, derived metrics, and meta fields
+    from raw data so modules never KeyError on absent pre-computed keys.
+    Works with both the old schema (has derived/ttm) and the new leaner
+    schema produced by Engine 1 / Engine 3.
+    """
+    import copy
+    fd = copy.deepcopy(fd)
+
+    financials = fd.setdefault("financials", {})
+    meta = fd.setdefault("meta", {})
+
+    revenue          = financials.get("revenue")          or []
+    ebit             = financials.get("ebit")             or []
+    ebitda           = financials.get("ebitda")           or []
+    net_income       = financials.get("net_income")       or []
+    interest_expense = financials.get("interest_expense") or []
+    n = len(revenue)
+
+    # ── Fill missing financials ────────────────────────────────────
+
+    if not financials.get("depreciation_amortisation") and n:
+        financials["depreciation_amortisation"] = [
+            (ebitda[i] - ebit[i])
+            if i < len(ebitda) and i < len(ebit)
+            and ebitda[i] is not None and ebit[i] is not None
+            else None
+            for i in range(n)
+        ]
+
+    if not financials.get("capital_expenditures") and n:
+        fcf = financials.get("free_cash_flow") or []
+        ocf = financials.get("operating_cash_flow") or []
+        financials["capital_expenditures"] = [
+            fcf[i] - ocf[i]
+            if i < len(fcf) and i < len(ocf)
+            and fcf[i] is not None and ocf[i] is not None
+            else None
+            for i in range(n)
+        ]
+
+    if not financials.get("net_working_capital") and n:
+        ca = financials.get("current_assets") or []
+        cl = financials.get("current_liabilities") or []
+        financials["net_working_capital"] = [
+            ca[i] - cl[i]
+            if i < len(ca) and i < len(cl)
+            and ca[i] is not None and cl[i] is not None
+            else None
+            for i in range(n)
+        ]
+
+    if not financials.get("net_debt") and n:
+        debt = financials.get("total_debt") or []
+        cash = financials.get("cash_and_equivalents") or []
+        financials["net_debt"] = [
+            debt[i] - cash[i]
+            if i < len(debt) and i < len(cash)
+            and debt[i] is not None and cash[i] is not None
+            else None
+            for i in range(n)
+        ]
+
+    # ── Fill missing meta ──────────────────────────────────────────
+
+    if not meta.get("current_price"):
+        meta["current_price"] = fd.get("market_data", {}).get("current_price", 0)
+
+    current_price = meta.get("current_price") or 0
+    market_cap    = meta.get("market_cap") or 0
+
+    if not meta.get("shares_outstanding") and current_price > 0 and market_cap > 0:
+        meta["shares_outstanding"] = market_cap / current_price
+
+    if not meta.get("enterprise_value"):
+        net_debt_latest = _last_valid(financials.get("net_debt") or []) or 0
+        meta["enterprise_value"] = market_cap + net_debt_latest
+
+    # ── Build TTM from last year if absent ─────────────────────────
+
+    if not fd.get("ttm"):
+        fd["ttm"] = synthesise_ttm(financials)
+
+    # ── Build derived metrics from raw if absent ───────────────────
+
+    if not fd.get("derived"):
+        ebitda_margin = [
+            safe_divide(ebitda[i], revenue[i])
+            if i < len(ebitda) and i < len(revenue)
+            and revenue[i] is not None and revenue[i] > 0
+            else None
+            for i in range(n)
+        ]
+
+        revenue_yoy = [
+            safe_divide(revenue[i] - revenue[i - 1], abs(revenue[i - 1]))
+            if revenue[i - 1] is not None and revenue[i - 1] != 0
+            else None
+            for i in range(1, n)
+        ]
+
+        n_years = n - 1
+        revenue_cagr = (
+            (revenue[-1] / revenue[0]) ** (1 / n_years) - 1
+            if n_years > 0 and revenue[0] and revenue[0] > 0 and revenue[-1]
+            else None
+        )
+
+        effective_tax_rate = []
+        for i in range(n):
+            if (i < len(ebit) and i < len(net_income)
+                    and ebit[i] is not None and net_income[i] is not None):
+                ie = interest_expense[i] if i < len(interest_expense) and interest_expense[i] is not None else 0
+                pre_tax = ebit[i] - ie
+                effective_tax_rate.append(
+                    safe_divide(pre_tax - net_income[i], pre_tax) if pre_tax > 0 else None
+                )
+            else:
+                effective_tax_rate.append(None)
+
+        fd["derived"] = {
+            "revenue_yoy":          revenue_yoy,
+            "revenue_cagr":         revenue_cagr,
+            "ebitda_margin":        ebitda_margin,
+            "ebitda_margin_trend":  _trend(ebitda_margin),
+            "effective_tax_rate":   effective_tax_rate,
+        }
+
+    return fd
 
 
 # ── Module 1: Revenue & FCF Forecasting ───────────────────────────────
@@ -186,8 +339,8 @@ def forecast_revenue_and_fcf(fd: dict, warnings: list[str]) -> dict:
     projected_fcf_margins = []
     prev_revenue_for_nwc = base_revenue
     for t in range(PROJECTION_YEARS):
-        nopat = projected_ebitda[t] * (1 - tax_rate)
         da = projected_revenue[t] * da_ratio
+        nopat = (projected_ebitda[t] - da) * (1 - tax_rate)  # EBIT × (1 - t)
         capex = projected_revenue[t] * capex_ratio  # negative
         delta_nwc = (projected_revenue[t] - prev_revenue_for_nwc) * nwc_ratio
         fcff = nopat + da + capex - delta_nwc
@@ -559,7 +712,6 @@ def compute_sensitivity(
     forecasts: dict,
     wacc_val: float,
     fd: dict,
-    warnings: list[str],
 ) -> dict:
     """Build 5x5 WACC x terminal-growth-rate implied share price matrix.
 
@@ -572,8 +724,6 @@ def compute_sensitivity(
     shares = meta.get("shares_outstanding", 1)
     net_debt = financials.get("net_debt", [0])[-1] or 0
     fcf_list = forecasts["projected_fcf"]
-    ebitda_last = forecasts["projected_ebitda"][-1]
-    sector = meta.get("sector", "").upper()
 
     # Build ranges centered on base case
     # SENSITIVITY_*_POINTS = steps each side (e.g. 2 → 5-point grid)
@@ -590,10 +740,6 @@ def compute_sensitivity(
         TERMINAL_GROWTH_RATE + (i - half_g) * SENSITIVITY_TGR_STEP
         for i in range(total_g)
     ]
-
-    # Exit multiple fallback
-    sector_multiples = SECTOR_AVG_MULTIPLES.get(sector, {})
-    exit_ev_ebitda = sector_multiples.get("ev_ebitda", 15.0)
 
     value_matrix: list[list[Optional[float]]] = []
 
