@@ -40,6 +40,11 @@ from backend.engines.shared_config import (
     SENSITIVITY_WACC_POINTS,
     SENSITIVITY_TGR_STEP,
     SENSITIVITY_TGR_POINTS,
+    REVERSE_DCF_TOLERANCE,
+    REVERSE_DCF_MAX_ITER,
+    REVERSE_DCF_GROWTH_LO,
+    REVERSE_DCF_GROWTH_HI,
+    REVERSE_DCF_OPTIMISM_BAND,
 )
 
 
@@ -775,4 +780,133 @@ def compute_sensitivity(
         "value_matrix": value_matrix,
         "base_case_wacc_idx": half_w,
         "base_case_growth_idx": half_g,
+    }
+
+
+# ── Module 6: Reverse DCF ─────────────────────────────────────────────
+
+
+def compute_reverse_dcf(
+    forecasts: dict,
+    wacc_result: dict,
+    fd: dict,
+    warnings: list[str],
+) -> dict:
+    """Bisection search for the implied revenue growth rate in the current market price.
+
+    Holds WACC, margins, DA ratio, capex ratio, NWC ratio, and tax rate fixed
+    (reusing Module 1 outputs) and solves only for the starting growth rate
+    that makes the DCF enterprise value equal to the market-implied EV.
+    """
+    meta       = fd["meta"]
+    financials = fd["financials"]
+
+    current_price = meta.get("current_price") or 0
+    shares        = meta.get("shares_outstanding") or 0
+    net_debt      = (financials.get("net_debt") or [0])[-1] or 0
+
+    _failed = lambda msg: {
+        "status": "failed",
+        "implied_growth_rate": None,
+        "forward_growth_rate": None,
+        "market_implied_stance": None,
+        "_error": msg,
+    }
+
+    if current_price <= 0 or shares <= 0:
+        return _failed("Missing current price or shares outstanding")
+
+    market_ev = current_price * shares + net_debt
+    if market_ev <= 0:
+        return _failed("Market-implied EV is non-positive")
+
+    wacc             = wacc_result["wacc"]
+    base_revenue     = fd["ttm"]["revenue"]
+    proj_margins     = forecasts["projected_margins"]
+    tax_rate         = forecasts["tax_rate"]
+    da_ratio         = forecasts["da_ratio"]
+    capex_ratio      = forecasts["capex_ratio"]
+    nwc_ratio        = forecasts["nwc_ratio"]
+
+    sector   = meta.get("sector", "").upper()
+    g_target = _clamp(
+        SECTOR_AVG_GROWTH_RATES.get(sector, DEFAULT_SECTOR_GROWTH),
+        TERMINAL_GROWTH_RATE,
+        MAX_TARGET_GROWTH,
+    )
+
+    # Forward DCF year-1 growth rate (comparison anchor)
+    fwd_rates = forecasts.get("projected_growth_rates", [])
+    forward_g = fwd_rates[0] if fwd_rates else None
+
+    def _ev_for_g(g_start: float) -> float:
+        effective_target = g_start if g_start < g_target else g_target
+        prev = base_revenue
+        proj_rev  = []
+        proj_ebitda = []
+        for t in range(PROJECTION_YEARS):
+            g_t = g_start + (effective_target - g_start) * ((t + 1) / PROJECTION_YEARS)
+            rev = prev * (1 + g_t)
+            proj_rev.append(rev)
+            proj_ebitda.append(rev * proj_margins[t])
+            prev = rev
+
+        prev_rev = base_revenue
+        pv_fcf = 0.0
+        for t in range(PROJECTION_YEARS):
+            da        = proj_rev[t] * da_ratio
+            nopat     = (proj_ebitda[t] - da) * (1 - tax_rate)
+            capex     = proj_rev[t] * capex_ratio
+            delta_nwc = (proj_rev[t] - prev_rev) * nwc_ratio
+            fcff      = nopat + da + capex - delta_nwc
+            pv_fcf   += fcff / (1 + wacc) ** (t + 1)
+            prev_rev  = proj_rev[t]
+
+        if wacc > TERMINAL_GROWTH_RATE:
+            tv = proj_rev[-1] * proj_margins[-1] * (1 + TERMINAL_GROWTH_RATE) / (wacc - TERMINAL_GROWTH_RATE)
+        else:
+            tv = proj_ebitda[-1] * SECTOR_AVG_MULTIPLES.get(sector, {}).get("ev_ebitda", 15.0)
+
+        return pv_fcf + tv / (1 + wacc) ** PROJECTION_YEARS
+
+    lo, hi = REVERSE_DCF_GROWTH_LO, REVERSE_DCF_GROWTH_HI
+    f_lo   = _ev_for_g(lo) - market_ev
+    f_hi   = _ev_for_g(hi) - market_ev
+
+    if f_lo > 0:
+        warnings.append("Market price implies growth below the reverse DCF search floor")
+        implied_g, status = lo, "bounded_lo"
+    elif f_hi < 0:
+        warnings.append("Market price implies growth above the reverse DCF search ceiling")
+        implied_g, status = hi, "bounded_hi"
+    else:
+        status = "success"
+        for _ in range(REVERSE_DCF_MAX_ITER):
+            mid   = (lo + hi) / 2.0
+            f_mid = _ev_for_g(mid) - market_ev
+            if abs(f_mid) < REVERSE_DCF_TOLERANCE or (hi - lo) < REVERSE_DCF_TOLERANCE:
+                break
+            if f_lo * f_mid <= 0:
+                hi = mid
+            else:
+                lo    = mid
+                f_lo  = f_mid
+        implied_g = (lo + hi) / 2.0
+
+    if forward_g is not None:
+        delta  = implied_g - forward_g
+        stance = (
+            "Optimistic"   if delta >  REVERSE_DCF_OPTIMISM_BAND else
+            "Conservative" if delta < -REVERSE_DCF_OPTIMISM_BAND else
+            "In Line"
+        )
+    else:
+        stance = None
+
+    return {
+        "status":                status,
+        "implied_growth_rate":   round(implied_g, 6),
+        "forward_growth_rate":   round(forward_g, 6) if forward_g is not None else None,
+        "market_implied_stance": stance,
+        "_error":                None,
     }
