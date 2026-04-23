@@ -5,7 +5,7 @@ Each test isolates one concern: contract shape, graceful degradation, sentiment
 scoring, red-flag detection (all 7 categories), theme extraction (all 9 themes),
 financial alignment, source coverage, Q&A split, and live-fetcher degradation.
 
-Run: python -m backend.engines.test_e4_smoke
+Run: python -m backend.engines.engine_4.test_e4_smoke
 Exits non-zero if any assertion fails.
 """
 
