@@ -35,6 +35,7 @@ from backend.engines.engine_2.modules import (
     compute_dcf,
     compute_relative,
     compute_sensitivity,
+    compute_reverse_dcf,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,16 @@ def _failed_sensitivity(reason: str) -> dict:
     }
 
 
+def _failed_reverse_dcf(reason: str) -> dict:
+    return {
+        "status": "failed",
+        "implied_growth_rate": None,
+        "forward_growth_rate": None,
+        "market_implied_stance": None,
+        "_error": reason,
+    }
+
+
 # ── ValuationEngine ───────────────────────────────────────────────────
 
 
@@ -127,6 +138,7 @@ class ValuationEngine(BaseEngine):
                 _failed_dcf("Invalid input data"),
                 _failed_relative("Invalid input data"),
                 _failed_sensitivity("Invalid input data"),
+                _failed_reverse_dcf("Invalid input data"),
                 fd,
                 warnings + [f"Skipped: {e}" for e in errors],
             )
@@ -145,6 +157,7 @@ class ValuationEngine(BaseEngine):
                 _failed_dcf("Pre-revenue company"),
                 _failed_relative("Pre-revenue company"),
                 _failed_sensitivity("Pre-revenue company"),
+                _failed_reverse_dcf("Pre-revenue company"),
                 fd,
                 warnings,
             )
@@ -223,6 +236,18 @@ class ValuationEngine(BaseEngine):
         else:
             sensitivity_result = _failed_sensitivity("DCF not available")
 
+        # ── Module 6: Reverse DCF ──────────────────────────────────
+
+        if run_dcf and forecasts and wacc_result and dcf_result.get("status") == "success":
+            try:
+                reverse_dcf_result = compute_reverse_dcf(forecasts, wacc_result, fd, warnings)
+            except Exception as exc:
+                logger.exception("Module 6 (reverse DCF) failed")
+                warnings.append(f"Reverse DCF failed: {exc}")
+                reverse_dcf_result = _failed_reverse_dcf(str(exc))
+        else:
+            reverse_dcf_result = _failed_reverse_dcf("Forward DCF not available")
+
         # ── Propagate data quality warnings ────────────────────────
 
         data_warnings = quality.get("warnings", [])
@@ -230,7 +255,7 @@ class ValuationEngine(BaseEngine):
             warnings.append(f"Data quality: {w}")
 
         return self._assemble(
-            dcf_result, relative_result, sensitivity_result, fd, warnings
+            dcf_result, relative_result, sensitivity_result, reverse_dcf_result, fd, warnings
         )
 
     # ── Summary & Confidence ───────────────────────────────────────
@@ -240,6 +265,7 @@ class ValuationEngine(BaseEngine):
         dcf: dict,
         relative: dict,
         sensitivity: dict,
+        reverse_dcf: dict,
         fd: dict,
         warnings: list[str],
     ) -> dict:
@@ -249,20 +275,14 @@ class ValuationEngine(BaseEngine):
 
         current_price = meta.get("current_price", 0)
 
-        summary = self._build_summary(dcf, relative, current_price, quality, warnings)
+        summary  = self._build_summary(dcf, relative, reverse_dcf, current_price, quality, warnings)
         meta_out = self._build_meta(fd, warnings, dcf.get("beta_source", "sector_average"))
-
-        # TODO: Reverse DCF
-        # Solve for the implied growth rate baked into the current market price using
-        # bisection search. Config already has: REVERSE_DCF_TOLERANCE, REVERSE_DCF_MAX_ITER,
-        # REVERSE_DCF_GROWTH_LO/HI, REVERSE_DCF_OPTIMISM_BAND in shared_config.py
-        # Output: implied_growth_rate, vs_consensus (Optimistic/In Line/Conservative)
-        # Add to summary dict as: "implied_growth_rate" and "market_implied_stance"
 
         return {
             "dcf": dcf,
             "relative": relative,
             "sensitivity": sensitivity,
+            "reverse_dcf": reverse_dcf,
             "summary": summary,
             "meta": meta_out,
             "valuation_range": {
@@ -276,6 +296,7 @@ class ValuationEngine(BaseEngine):
         self,
         dcf: dict,
         relative: dict,
+        reverse_dcf: dict,
         current_price: float,
         quality: dict,
         warnings: list[str],
@@ -338,6 +359,8 @@ class ValuationEngine(BaseEngine):
             "upside_pct": upside,
             "verdict": verdict,
             "confidence": confidence,
+            "implied_growth_rate": reverse_dcf.get("implied_growth_rate"),
+            "market_implied_stance": reverse_dcf.get("market_implied_stance"),
         }
 
     def _determine_verdict(
