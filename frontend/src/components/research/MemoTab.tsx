@@ -46,8 +46,96 @@ ${m.bearCase}
         >
           <Copy className="h-4 w-4" /> Copy memo
         </Button>
-        <Button variant="hero" size="sm" onClick={() => toast.info("PDF export coming in Pro")}>
-          <Download className="h-4 w-4" /> Download PDF
+        <Button
+          variant="hero"
+          size="sm"
+          onClick={async () => {
+            const XLSX = await import("xlsx");
+            const wb = XLSX.utils.book_new();
+
+            // Sheet 1 — Summary
+            XLSX.utils.book_append_sheet(
+              wb,
+              XLSX.utils.aoa_to_sheet([
+                ["Ticker", c.ticker],
+                ["Company", c.name],
+                ["Sector", c.sector],
+                ["Industry", c.industry],
+                ["Rating", c.rating],
+                ["Price", c.price],
+                ["Intrinsic Value", c.intrinsicValue],
+                ["Upside (%)", c.upside],
+                ["WACC", c.wacc],
+                ["Terminal Growth", c.terminalGrowth],
+                ["Market Cap", c.marketCap],
+                ["Revenue", c.stats.revenue],
+                ["EPS", c.stats.eps],
+                ["P/E", c.stats.pe],
+                ["EV/EBITDA", c.stats.evEbitda],
+              ]),
+              "Summary",
+            );
+
+            // Sheet 2 — DCF Sensitivity (rows = terminal growth, cols = WACC)
+            XLSX.utils.book_append_sheet(
+              wb,
+              XLSX.utils.aoa_to_sheet([
+                ["Intrinsic Value Grid (Terminal Growth \\ WACC)", ...["WACC-2%", "WACC-1%", "Base", "WACC+1%", "WACC+2%"]],
+                ...c.sensitivity.map((row, i) => [`TG${["−2%","−1%","Base","+1%","+2%"][i]}`, ...row]),
+              ]),
+              "DCF Sensitivity",
+            );
+
+            // Sheet 3 — Risk Metrics
+            XLSX.utils.book_append_sheet(
+              wb,
+              XLSX.utils.aoa_to_sheet([
+                ["Metric", "Value"],
+                ["Risk Level", c.risk.level],
+                ["Beta", c.risk.beta],
+                ["Sharpe Ratio", c.risk.sharpe],
+                ["Max Drawdown", c.risk.maxDrawdown],
+                ["VaR 95%", c.risk.var95],
+                ["Altman Z-Score", c.risk.altmanZ],
+                ["Debt/Equity", c.risk.debtToEquity],
+                ["Interest Coverage", c.risk.interestCoverage],
+                ["Current Ratio", c.risk.currentRatio],
+              ]),
+              "Risk Metrics",
+            );
+
+            // Sheet 4 — Peer Multiples
+            XLSX.utils.book_append_sheet(
+              wb,
+              XLSX.utils.aoa_to_sheet([
+                ["Ticker", "P/E", "EV/EBITDA", "P/B"],
+                ...c.peers.map((p) => [p.ticker, p.pe, p.ev, p.pb]),
+              ]),
+              "Peer Multiples",
+            );
+
+            // Sheet 5 — Investment Memo
+            XLSX.utils.book_append_sheet(
+              wb,
+              XLSX.utils.aoa_to_sheet([
+                ["Section", "Content"],
+                ["Summary", m.summary],
+                ["Financial Performance", m.performance],
+                ["Bear Case ($)", m.bear],
+                ["Base Case ($)", m.base],
+                ["Bull Case ($)", m.bull],
+                ["Investment Thesis", m.thesis],
+                ["Bear Case Description", m.bearCase],
+                ["Key Risks", m.risks.join("\n")],
+              ]),
+              "Investment Memo",
+            );
+
+            XLSX.writeFile(wb, `${c.ticker}_EquiMind_Research.xlsx`);
+            toast.success("Excel workbook downloaded");
+          }}
+        >
+          <Download className="h-4 w-4" /> Export to Excel
         </Button>
       </div>
 

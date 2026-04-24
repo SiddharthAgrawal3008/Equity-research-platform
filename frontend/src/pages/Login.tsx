@@ -1,23 +1,75 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/AuthContext";
 
 export default function Login() {
-  const { session, loading, signInWithGoogle, signInWithGithub } = useAuth();
+  const { session, loading, signInWithGoogle, signInWithGithub, signInWithEmail, signUpWithEmail } = useAuth();
   const navigate = useNavigate();
+
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!loading && session) navigate("/app", { replace: true });
   }, [session, loading, navigate]);
+
+  const switchMode = (next: "signin" | "signup") => {
+    setMode(next);
+    setError(null);
+    setInfo(null);
+  };
+
+  const handleEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+
+    if (mode === "signup" && password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (mode === "signin") {
+        await signInWithEmail(email, password);
+      } else {
+        await signUpWithEmail(email, password);
+        setInfo("Check your inbox and confirm your email to continue.");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("Invalid login credentials")) {
+        setError("Incorrect email or password.");
+      } else if (msg.includes("User already registered")) {
+        setError("An account with this email already exists.");
+        switchMode("signin");
+      } else if (msg.includes("Email not confirmed")) {
+        setError("Please confirm your email before signing in.");
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-8">
         <div className="flex flex-col items-center gap-3 text-center">
           <Logo />
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Sign in to EquiMind</h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">
+            {mode === "signin" ? "Sign in to EquiMind" : "Create your account"}
+          </h1>
           <p className="text-sm text-muted-foreground">
             Institutional-grade equity research, in your browser.
           </p>
@@ -41,6 +93,72 @@ export default function Login() {
             Continue with GitHub
           </Button>
         </div>
+
+        <div className="relative flex items-center gap-3">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs text-muted-foreground">or</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+
+        <form onSubmit={handleEmailSubmit} className="space-y-3">
+          <Input
+            type="email"
+            placeholder="Email address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="bg-surface"
+          />
+          <Input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="bg-surface"
+          />
+          {mode === "signup" && (
+            <Input
+              type="password"
+              placeholder="Confirm password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              className="bg-surface"
+            />
+          )}
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          {info && <p className="text-sm text-muted-foreground">{info}</p>}
+          <Button type="submit" className="w-full" disabled={submitting}>
+            {submitting ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+          </Button>
+        </form>
+
+        <p className="text-center text-sm text-muted-foreground">
+          {mode === "signin" ? (
+            <>
+              Don&apos;t have an account?{" "}
+              <button
+                type="button"
+                onClick={() => switchMode("signup")}
+                className="font-medium text-foreground underline underline-offset-2"
+              >
+                Sign up
+              </button>
+            </>
+          ) : (
+            <>
+              Already have an account?{" "}
+              <button
+                type="button"
+                onClick={() => switchMode("signin")}
+                className="font-medium text-foreground underline underline-offset-2"
+              >
+                Sign in
+              </button>
+            </>
+          )}
+        </p>
 
         <p className="text-center text-xs text-muted-foreground">
           By continuing you agree to our{" "}

@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UploadZone } from "@/components/app/UploadZone";
-import { DocumentList } from "@/components/app/DocumentList";
 import { addDocuments, useClient } from "@/lib/clientsStore";
+import { useAuth } from "@/context/AuthContext";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
@@ -22,7 +22,8 @@ export const AnalyzeFromDocs = () => {
   const [params] = useSearchParams();
   const clientId = params.get("client") ?? "";
   const docIds = (params.get("docs") ?? "").split(",").filter(Boolean);
-  const client = useClient(clientId);
+  const { client, loading } = useClient(clientId);
+  const { user } = useAuth();
 
   const [stage, setStage] = useState(0);
   const [done, setDone] = useState(false);
@@ -40,6 +41,14 @@ export const AnalyzeFromDocs = () => {
     () => client?.documents.filter((d) => docIds.includes(d.id)) ?? [],
     [client, docIds],
   );
+
+  if (loading) {
+    return (
+      <div className="container flex items-center justify-center py-24">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!client) {
     return (
@@ -99,7 +108,16 @@ export const AnalyzeFromDocs = () => {
               </ul>
             </Card>
           ) : (
-            <GeneratedMemo client={client.name} sources={sourceDocs.length} />
+            <Card className="border-border bg-card p-10 shadow-card text-center">
+              <Sparkles className="mx-auto h-8 w-8 text-accent mb-4" />
+              <h2 className="font-display text-xl font-semibold">Document-only analysis coming soon</h2>
+              <p className="mt-3 text-sm text-muted-foreground max-w-sm mx-auto">
+                For now, use the ticker verification path on the client page to generate a full research report cross-referenced with your uploaded documents.
+              </p>
+              <Button asChild variant="hero" className="mt-6">
+                <Link to={`/app/clients/${client.id}`}>Back to {client.name}</Link>
+              </Button>
+            </Card>
           )}
         </div>
 
@@ -113,9 +131,14 @@ export const AnalyzeFromDocs = () => {
                 <p className="mb-3 text-xs text-muted-foreground">
                   No source docs selected. Drop in additional supporting material:
                 </p>
-                <UploadZone compact onFiles={(files) => {
-                  addDocuments(client.id, files);
-                  toast.success(`${files.length} file${files.length > 1 ? "s" : ""} added to ${client.name}`);
+                <UploadZone compact onFiles={async (files) => {
+                  if (!user) return;
+                  try {
+                    await addDocuments(client.id, user.id, files);
+                    toast.success(`${files.length} file${files.length > 1 ? "s" : ""} added to ${client.name}`);
+                  } catch {
+                    toast.error("Upload failed");
+                  }
                 }} />
               </>
             ) : (
@@ -135,37 +158,3 @@ export const AnalyzeFromDocs = () => {
     </div>
   );
 };
-
-const GeneratedMemo = ({ client, sources }: { client: string; sources: number }) => (
-  <Card className="border-border bg-card p-8 shadow-card">
-    <div className="border-b border-border pb-5">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-xl font-semibold">Investment Memo · Private</h2>
-        <Badge className="bg-bull text-bull-foreground hover:bg-bull">BUY · Conditional</Badge>
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">For {client} · synthesised from {sources} source documents</p>
-    </div>
-
-    {[
-      { n: "1", t: "Business Summary", c: "Subject company operates in the consumer technology space with a recurring services franchise. Documents indicate revenue growth in the high single digits and gross margin expansion driven by mix shift toward services." },
-      { n: "2", t: "Financial Performance (extracted)", c: "Revenue ~$391B (TTM, per uploaded 10-K, p.45). Operating margin 31.5%. Free cash flow conversion >100% of net income. Internal DCF model assumes 4.5% revenue CAGR through Year 5." },
-      { n: "3", t: "Cross-Check vs Internal Model", c: "EquiMind base-case intrinsic value of $198 is within 3% of your internal model's $193 base case. Sensitivity analysis confirms valuation robustness across WACC range 7.5–9.5%." },
-      { n: "4", t: "Key Risks (from documents)", c: "Concentration in greater-China revenue (~17%, per 10-K Item 1A). Regulatory pressure on App Store economics flagged in earnings transcript Q&A. Supply chain commentary remained constructive." },
-      { n: "5", t: "Investment Thesis", c: "Documents corroborate the public thesis: services momentum and gross-margin expansion underpin a base-case fair value with ~12% upside. Verification with internal model strengthens conviction." },
-      { n: "6", t: "Bear Case", c: "Per management commentary, sustained China softness combined with adverse App Store remedy could compress fair value to ~$158 — consistent with the bear scenario in your internal model." },
-    ].map((s) => (
-      <section key={s.n} className="mt-5 border-b border-border pb-5 last:border-b-0">
-        <div className="mb-1.5 flex items-baseline gap-3">
-          <span className="font-mono-num text-xs font-semibold text-accent">{s.n}</span>
-          <h3 className="font-display text-base font-semibold">{s.t}</h3>
-        </div>
-        <p className="text-sm leading-relaxed text-foreground/85">{s.c}</p>
-      </section>
-    ))}
-
-    <div className="mt-6 flex items-center justify-between border-t border-border pt-4 text-[11px] text-muted-foreground">
-      <span>Generated · {new Date().toLocaleDateString()}</span>
-      <Badge variant="outline" className="border-border">Private — for client use only</Badge>
-    </div>
-  </Card>
-);

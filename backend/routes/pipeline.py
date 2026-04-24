@@ -21,6 +21,7 @@ class PipelineRequest(BaseModel):
     ticker: str
     session_id: str | None = None
     user_id: str | None = None
+    financial_override: dict | None = None  # parsed Excel data; Engine 1 checks this first
 
 
 @router.post("/pipeline")

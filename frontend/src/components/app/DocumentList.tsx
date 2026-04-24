@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 interface Props {
-  clientId: string;
   documents: UploadedDoc[];
   selectable?: boolean;
   selectedIds?: string[];
@@ -20,7 +19,6 @@ interface Props {
 }
 
 export const DocumentList = ({
-  clientId,
   documents,
   selectable,
   selectedIds = [],
@@ -62,20 +60,8 @@ export const DocumentList = ({
                 <span className="truncate text-sm font-medium text-foreground">{d.name}</span>
                 <StatusPill status={d.status} />
               </div>
-              <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="font-mono-num">{formatBytes(d.size)}</span>
-                {d.pages != null && (
-                  <>
-                    <span>·</span>
-                    <span className="font-mono-num">{d.pages} pages</span>
-                  </>
-                )}
-                {d.summary && (
-                  <>
-                    <span>·</span>
-                    <span className="truncate">{d.summary}</span>
-                  </>
-                )}
+              <div className="mt-0.5 text-xs text-muted-foreground font-mono-num">
+                {formatBytes(d.size)}
               </div>
             </div>
             <DropdownMenu>
@@ -89,9 +75,13 @@ export const DocumentList = ({
                   <Eye className="h-4 w-4" /> Preview parse
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => {
-                    removeDoc(clientId, d.id);
-                    toast.success("Document removed");
+                  onClick={async () => {
+                    try {
+                      await removeDoc(d.id, d.storage_path);
+                      toast.success("Document removed");
+                    } catch {
+                      toast.error("Failed to remove document");
+                    }
                   }}
                   className="text-bear focus:text-bear"
                 >
@@ -106,7 +96,7 @@ export const DocumentList = ({
   );
 };
 
-const StatusPill = ({ status }: { status: UploadedDoc["status"] }) => {
+const StatusPill = ({ status }: { status: string }) => {
   if (status === "ready")
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-bull/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-bull">
