@@ -7,6 +7,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithGithub: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -36,12 +37,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const signInWithGithub = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: { redirectTo: `${window.location.origin}/app` },
+    });
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signInWithGoogle, signInWithGithub, signOut }}>
       {children}
     </AuthContext.Provider>
   );
