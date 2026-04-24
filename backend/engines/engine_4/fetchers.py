@@ -21,7 +21,11 @@ from backend.engines.shared_config import FMP_API_KEY
 
 logger = logging.getLogger(__name__)
 
-_HTTP_TIMEOUT_S: float = 5.0
+# Cap all socket operations (connect + recv + DNS) so a stalled external
+# host can never block the pipeline thread indefinitely.
+socket.setdefaulttimeout(8.0)
+
+_HTTP_TIMEOUT_S: float = 6.0
 _HTTP_USER_AGENT: str = (
     "Equity-Research-Platform/1.0 (engine_4_nlp; contact: team@example.com)"
 )
