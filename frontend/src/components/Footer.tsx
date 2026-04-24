@@ -6,7 +6,7 @@ const groups = [
   {
     title: "Product",
     links: [
-      { label: "Platform", to: "/app" },
+      { label: "Platform", to: "/login" },
       { label: "Products", to: "/products" },
       { label: "Solutions", to: "/solutions" },
     ],
