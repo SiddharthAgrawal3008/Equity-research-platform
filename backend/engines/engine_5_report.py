@@ -20,7 +20,6 @@ TODO (Naman): Replace the stub below with real implementation.
 """
 
 from backend.pipeline.base_engine import BaseEngine
-from backend.engines.mock_bus_data import MOCK_REPORT
 
 
 class ReportEngine(BaseEngine):
@@ -50,4 +49,17 @@ class ReportEngine(BaseEngine):
         # 4. If nlp_insights is missing: omit NLP section (minimal impact)
         # 5. Format everything into a structured investment memo
         # 6. Return dict matching the report bus key schema
-        return MOCK_REPORT
+        warnings = []
+        if "valuation" not in available_sections:
+            warnings.append("Valuation engine unavailable — valuation section omitted.")
+        if "risk_metrics" not in available_sections:
+            warnings.append("Risk engine unavailable — risk section omitted.")
+        if "nlp_insights" not in available_sections:
+            warnings.append("NLP engine unavailable — sentiment section omitted.")
+
+        return {
+            "summary": "STUB — real investment memo not yet generated.",
+            "sections": {},
+            "available_sections": available_sections,
+            "warnings": warnings,
+        }
