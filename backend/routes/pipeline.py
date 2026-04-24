@@ -12,28 +12,28 @@ from pydantic import BaseModel
 
 from backend.pipeline.orchestrator import run_pipeline
 from backend.engines import DEFAULT_ENGINES
+from backend.db.supabase_client import save_research_result
 
 router = APIRouter()
 
 
 class PipelineRequest(BaseModel):
-    """Request body for the pipeline endpoint."""
     ticker: str
+    session_id: str | None = None
+    user_id: str | None = None
 
 
 @router.post("/pipeline")
 def run_pipeline_endpoint(request: PipelineRequest) -> dict:
-    """Execute the full 5-engine equity research pipeline.
-
-    Args:
-        request: JSON body with a ``ticker`` field.
-
-    Returns:
-        The complete data bus dict with all engine outputs,
-        status tracking, error log, and pipeline metadata.
-    """
     try:
         result = run_pipeline(request.ticker, engines=DEFAULT_ENGINES)
+
+        if request.session_id and request.user_id:
+            try:
+                save_research_result(request.session_id, request.user_id, request.ticker, result)
+            except Exception:
+                pass  # never fail the response because of a DB write
+
         return result
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
