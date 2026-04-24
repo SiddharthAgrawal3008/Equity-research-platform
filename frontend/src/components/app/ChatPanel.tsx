@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useMessages } from "@/hooks/useMessages";
 import { addMessage as dbAddMessage, saveResearchResult, type Message, type Session } from "@/lib/db";
 import { fetchResearch, pingBackend, BASE_URL } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 import type { CompanyData } from "@/lib/mockData";
 
 interface ChatPanelProps {
@@ -17,6 +18,7 @@ interface ChatPanelProps {
 export function ChatPanel({ activeSession, onSessionCreate }: ChatPanelProps) {
   const { user } = useAuth();
   const { messages, loading } = useMessages(activeSession?.id ?? null);
+  const { toast } = useToast();
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [pendingTicker, setPendingTicker] = useState<string | null>(null);
@@ -52,12 +54,28 @@ export function ChatPanel({ activeSession, onSessionCreate }: ChatPanelProps) {
       try {
         data = await fetchResearch(ticker);
       } catch (err) {
-        await dbAddMessage(sessionId, user.id, "assistant", String(err), "error");
+        const errMsg = String(err);
+        try {
+          await dbAddMessage(sessionId, user.id, "assistant", errMsg, "error");
+        } catch {
+          // DB write failed — show toast so user still sees the error
+          toast({ variant: "destructive", title: "Research failed", description: errMsg });
+        }
         return;
       }
 
       await dbAddMessage(sessionId, user.id, "assistant", JSON.stringify(data), "research", { ticker });
-      await saveResearchResult(sessionId, user.id, ticker, data);
+      try {
+        await saveResearchResult(sessionId, user.id, ticker, data);
+      } catch {
+        // Non-critical — result is already shown to user
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Something went wrong",
+        description: String(err),
+      });
     } finally {
       setPending(false);
       setPendingTicker(null);
