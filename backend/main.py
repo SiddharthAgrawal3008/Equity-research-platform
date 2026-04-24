@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.routes.analysis import router as analysis_router
 from backend.routes.financial_data import router as financial_data_router
 from backend.routes.pipeline import router as pipeline_router
 
@@ -15,7 +14,6 @@ app.add_middleware(
 )
 
 # Route registrations
-app.include_router(analysis_router, prefix="/api")
 app.include_router(financial_data_router, prefix="/api")
 app.include_router(pipeline_router, prefix="/api")
 
