@@ -172,7 +172,7 @@ def extract(context: dict, available_sections: list[str]) -> ReportData:
         market_implied_stance = rev_dcf.get("market_implied_stance"),
 
         beta               = mkt.get("beta"),
-        beta_benchmark     = mkt.get("beta_source") or "S&P 500",
+        beta_benchmark     = "S&P 500",  # ^GSPC is the only benchmark used (shared_config.BENCHMARK_TICKER)
         volatility         = mkt.get("volatility_annual") or mkt.get("historical_volatility"),
         sharpe             = mkt.get("sharpe_ratio"),
         max_drawdown       = mkt.get("max_drawdown"),

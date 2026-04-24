@@ -313,24 +313,32 @@ def key_risks(d: ReportData) -> str:
     # NLP sub-block
     if "nlp_insights" in d.available_sections:
         nlp_lines = ["NLP / MANAGEMENT SIGNALS"]
-        if d.management_optimism is not None:
-            nlp_lines.append(f"  Management Optimism:  {_fmt_f(d.management_optimism)}")
-        if d.risk_word_frequency is not None:
-            nlp_lines.append(f"  Risk Word Frequency:  {_fmt_pct(d.risk_word_frequency)}")
-        if d.uncertainty_score is not None:
-            nlp_lines.append(f"  Uncertainty Score:    {_fmt_f(d.uncertainty_score)}")
-        if d.forward_guidance_tone:
-            nlp_lines.append(f"  Fwd Guidance Tone:    {d.forward_guidance_tone}")
-        if d.nlp_flag_severity:
-            nlp_lines.append(f"  Red Flag Severity:    {d.nlp_flag_severity}")
-        if d.nlp_flags:
-            nlp_lines.append("  Red Flags:            " + "; ".join(str(f) for f in d.nlp_flags[:5]))
-        if d.nlp_categories:
-            nlp_lines.append("  Risk Categories:      " + ", ".join(str(c) for c in d.nlp_categories))
-        if d.emerging_themes:
-            nlp_lines.append("  Emerging Themes:      " + ", ".join(str(t) for t in d.emerging_themes[:3]))
-        if d.fading_themes:
-            nlp_lines.append("  Fading Themes:        " + ", ".join(str(t) for t in d.fading_themes[:3]))
+        has_nlp_data = any([
+            d.management_optimism, d.risk_word_frequency, d.uncertainty_score,
+            d.forward_guidance_tone, d.nlp_flag_severity, d.nlp_flags,
+            d.nlp_categories, d.emerging_themes, d.fading_themes,
+        ])
+        if not has_nlp_data:
+            nlp_lines.append("  NLP analysis unavailable — no earnings transcripts were processed.")
+        else:
+            if d.management_optimism is not None:
+                nlp_lines.append(f"  Management Optimism:  {_fmt_f(d.management_optimism)}")
+            if d.risk_word_frequency is not None:
+                nlp_lines.append(f"  Risk Word Frequency:  {_fmt_pct(d.risk_word_frequency)}")
+            if d.uncertainty_score is not None:
+                nlp_lines.append(f"  Uncertainty Score:    {_fmt_f(d.uncertainty_score)}")
+            if d.forward_guidance_tone:
+                nlp_lines.append(f"  Fwd Guidance Tone:    {d.forward_guidance_tone}")
+            if d.nlp_flag_severity:
+                nlp_lines.append(f"  Red Flag Severity:    {d.nlp_flag_severity}")
+            if d.nlp_flags:
+                nlp_lines.append("  Red Flags:            " + "; ".join(str(f) for f in d.nlp_flags[:5]))
+            if d.nlp_categories:
+                nlp_lines.append("  Risk Categories:      " + ", ".join(str(c) for c in d.nlp_categories))
+            if d.emerging_themes:
+                nlp_lines.append("  Emerging Themes:      " + ", ".join(str(t) for t in d.emerging_themes[:3]))
+            if d.fading_themes:
+                nlp_lines.append("  Fading Themes:        " + ", ".join(str(t) for t in d.fading_themes[:3]))
         parts.append("\n".join(nlp_lines))
 
     return "\n\n".join(parts) if parts else "Key risk data unavailable."
