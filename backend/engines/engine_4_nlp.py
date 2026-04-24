@@ -32,7 +32,7 @@ __all__ = [
 
 
 if __name__ == "__main__":
-    from backend.engines.mock_bus_data import MOCK_FINANCIAL_DATA
+    from backend.engines.engine_1.mock_data import MOCK_FINANCIAL_DATA
 
     ctx = {"ticker": "AAPL", "financial_data": MOCK_FINANCIAL_DATA}
     engine = NLPIntelligenceEngine()
