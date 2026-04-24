@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { ThemeProvider } from "@/components/app/ThemeProvider";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import { LoadingScreen } from "@/components/app/LoadingScreen";
@@ -11,6 +11,8 @@ import { Sidebar } from "@/components/app/Sidebar";
 import { ChatPanel } from "@/components/app/ChatPanel";
 import { useSessions } from "@/hooks/useSessions";
 import { fetchResearch } from "@/lib/api";
+import { saveResearchResult } from "@/lib/db";
+import { useAuth } from "@/context/AuthContext";
 import type { CompanyData } from "@/lib/mockData";
 
 const AppShell = ({ children }: { children: React.ReactNode }) => (
@@ -62,6 +64,9 @@ export const AppHome = () => {
 
 export const AppResearch = () => {
   const { ticker = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const sessionId = searchParams.get("session");
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<CompanyData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,10 +76,15 @@ export const AppResearch = () => {
     setData(null);
     setError(null);
     fetchResearch(ticker)
-      .then((result) => setData(result))
+      .then(async (result) => {
+        setData(result);
+        if (sessionId && user) {
+          await saveResearchResult(sessionId, user.id, ticker.toUpperCase(), result).catch(() => {});
+        }
+      })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false));
-  }, [ticker]);
+  }, [ticker, sessionId]);
 
   return withApp(
     loading ? (

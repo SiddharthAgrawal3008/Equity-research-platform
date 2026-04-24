@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Search, Users, FileText, ArrowRight } from "lucide-react";
+import { Plus, Search, Users, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,16 +15,26 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useClients, createClient } from "@/lib/clientsStore";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
 export const ClientsList = () => {
-  const clients = useClients();
+  const { user } = useAuth();
+  const { clients, loading } = useClients();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
 
   const filtered = clients.filter((c) =>
     (c.name + " " + (c.organization ?? "")).toLowerCase().includes(q.toLowerCase()),
   );
+
+  if (loading) {
+    return (
+      <div className="container flex items-center justify-center py-24">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="container py-8 lg:py-10">
@@ -36,7 +46,7 @@ export const ClientsList = () => {
             Each client has their own document vault and research history.
           </p>
         </div>
-        <NewClientButton open={open} setOpen={setOpen} />
+        <NewClientButton open={open} setOpen={setOpen} userId={user?.id ?? ""} />
       </div>
 
       <div className="mt-6 flex items-center gap-3">
@@ -61,7 +71,7 @@ export const ClientsList = () => {
           <p className="max-w-sm text-sm text-muted-foreground">
             Create a client to start uploading their documents and generating private research.
           </p>
-          <NewClientButton open={open} setOpen={setOpen} />
+          <NewClientButton open={open} setOpen={setOpen} userId={user?.id ?? ""} />
         </Card>
       ) : (
         <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -78,14 +88,8 @@ export const ClientsList = () => {
                 {c.organization && (
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{c.organization}</p>
                 )}
-                <div className="mt-5 flex items-center gap-4 border-t border-border pt-4 text-xs">
-                  <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                    <FileText className="h-3.5 w-3.5" />
-                    <span className="font-mono-num font-semibold text-foreground">{c.documents.length}</span> docs
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                    <span className="font-mono-num font-semibold text-foreground">{c.reports.length}</span> reports
-                  </span>
+                <div className="mt-5 border-t border-border pt-4 text-xs text-muted-foreground">
+                  {new Date(c.created_at).toLocaleDateString()}
                 </div>
               </Card>
             </Link>
@@ -96,20 +100,40 @@ export const ClientsList = () => {
   );
 };
 
-const NewClientButton = ({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) => {
+const NewClientButton = ({
+  open,
+  setOpen,
+  userId,
+}: {
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  userId: string;
+}) => {
   const [name, setName] = useState("");
   const [org, setOrg] = useState("");
   const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    createClient({ name: name.trim(), organization: org.trim() || undefined, notes: notes.trim() || undefined });
-    toast.success(`Client "${name}" created`);
-    setName("");
-    setOrg("");
-    setNotes("");
-    setOpen(false);
+    if (!name.trim() || !userId) return;
+    setSaving(true);
+    try {
+      await createClient(userId, {
+        name: name.trim(),
+        organization: org.trim() || undefined,
+        notes: notes.trim() || undefined,
+      });
+      toast.success(`Client "${name}" created`);
+      setName("");
+      setOrg("");
+      setNotes("");
+      setOpen(false);
+    } catch {
+      toast.error("Failed to create client");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -140,7 +164,9 @@ const NewClientButton = ({ open, setOpen }: { open: boolean; setOpen: (v: boolea
           </div>
           <DialogFooter className="mt-6">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" variant="hero">Create client</Button>
+            <Button type="submit" variant="hero" disabled={saving}>
+              {saving ? "Creating…" : "Create client"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, FileText, Sparkles, Trash2, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, FileText, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
@@ -16,18 +15,31 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { addDocuments, addReport, deleteClient, useClient } from "@/lib/clientsStore";
+import { addDocuments, deleteClient, useClient, useClientSessions } from "@/lib/clientsStore";
+import { createSession } from "@/lib/db";
 import { UploadZone } from "@/components/app/UploadZone";
 import { DocumentList } from "@/components/app/DocumentList";
-import { TICKERS } from "@/lib/mockData";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+
+const QUICK_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT", "GOOGL"];
 
 export const ClientDetail = () => {
   const { id = "" } = useParams();
-  const client = useClient(id);
+  const { client, loading } = useClient(id);
+  const { sessions } = useClientSessions(id);
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<string[]>([]);
   const [ticker, setTicker] = useState("");
+
+  if (loading) {
+    return (
+      <div className="container flex items-center justify-center py-24">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!client) {
     return (
@@ -43,27 +55,33 @@ export const ClientDetail = () => {
   const toggle = (docId: string) =>
     setSelected((s) => (s.includes(docId) ? s.filter((x) => x !== docId) : [...s, docId]));
 
-  const onUpload = (files: File[]) => {
-    addDocuments(client.id, files);
-    toast.success(`${files.length} file${files.length > 1 ? "s" : ""} uploading…`);
+  const onUpload = async (files: File[]) => {
+    if (!user) return;
+    try {
+      await addDocuments(client.id, user.id, files);
+      toast.success(`${files.length} file${files.length > 1 ? "s" : ""} uploaded`);
+    } catch {
+      toast.error("Upload failed");
+    }
   };
 
-  const generate = (tk: string | null) => {
-    const sourceIds = selected.length > 0 ? selected : client.documents.filter((d) => d.status === "ready").map((d) => d.id);
+  const generate = async (tk: string | null) => {
+    if (!user) return;
+    const sourceIds =
+      selected.length > 0
+        ? selected
+        : client.documents.filter((d) => d.status === "ready").map((d) => d.id);
     if (sourceIds.length === 0) {
       toast.error("Upload at least one document first");
       return;
     }
     if (tk) {
-      addReport(client.id, {
-        ticker: tk.toUpperCase(),
-        title: `${tk.toUpperCase()} — Verified with client docs`,
-        rating: "BUY",
-        intrinsic: 198.4,
-        upside: 12.2,
-        sourceDocIds: sourceIds,
-      });
-      navigate(`/app/research/${tk.toUpperCase()}?client=${client.id}&docs=${sourceIds.join(",")}`);
+      const session = await createSession(
+        user.id,
+        `${tk.toUpperCase()} — Verified with client docs`,
+        client.id,
+      );
+      navigate(`/app/research/${tk.toUpperCase()}?session=${session.id}`);
     } else {
       navigate(`/app/analyze?client=${client.id}&docs=${sourceIds.join(",")}`);
     }
@@ -105,16 +123,20 @@ export const ClientDetail = () => {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete this client?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will remove {client.documents.length} documents and {client.reports.length} reports. This action cannot be undone.
+                      This will remove all documents and research history for {client.name}. This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      onClick={() => {
-                        deleteClient(client.id);
-                        toast.success("Client deleted");
-                        navigate("/app/clients");
+                      onClick={async () => {
+                        try {
+                          await deleteClient(client.id);
+                          toast.success("Client deleted");
+                          navigate("/app/clients");
+                        } catch {
+                          toast.error("Failed to delete client");
+                        }
                       }}
                       className="bg-bear text-bear-foreground hover:bg-bear/90"
                     >
@@ -137,7 +159,6 @@ export const ClientDetail = () => {
             <UploadZone onFiles={onUpload} />
             <div className="mt-4">
               <DocumentList
-                clientId={client.id}
                 documents={client.documents}
                 selectable
                 selectedIds={selected}
@@ -147,47 +168,32 @@ export const ClientDetail = () => {
             </div>
           </section>
 
-          {/* Reports */}
+          {/* Research history */}
           <section>
             <h2 className="mb-3 text-sm font-semibold">Research history</h2>
-            {client.reports.length === 0 ? (
+            {sessions.length === 0 ? (
               <Card className="border-dashed border-border bg-surface-muted/40 p-8 text-center text-sm text-muted-foreground">
-                No reports generated yet for this client.
+                No research generated yet for this client.
               </Card>
             ) : (
               <ul className="space-y-2">
-                {client.reports.map((r) => (
-                  <li key={r.id}>
+                {sessions.map((s) => (
+                  <li key={s.id}>
                     <Link
-                      to={r.ticker ? `/app/research/${r.ticker}?client=${client.id}` : `/app/analyze?report=${r.id}&client=${client.id}`}
+                      to={s.ticker ? `/app/research/${s.ticker}?session=${s.id}` : `/app?session=${s.id}`}
                       className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 transition-all hover:border-accent/50 hover:shadow-card"
                     >
                       <div className="flex h-9 w-9 items-center justify-center rounded-md bg-accent-soft text-accent">
                         <FileText className="h-4 w-4" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-semibold">{r.title}</span>
-                          <Badge
-                            className={
-                              r.rating === "BUY"
-                                ? "bg-bull text-bull-foreground hover:bg-bull"
-                                : r.rating === "SELL"
-                                ? "bg-bear text-bear-foreground hover:bg-bear"
-                                : "bg-neutral text-neutral-foreground hover:bg-neutral"
-                            }
-                          >
-                            {r.rating}
-                          </Badge>
-                        </div>
+                        <span className="truncate text-sm font-semibold">{s.title}</span>
                         <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{new Date(r.createdAt).toLocaleDateString()}</span>
-                          <span>·</span>
-                          <span>{r.sourceDocIds.length} sources</span>
-                          {r.intrinsic != null && (
+                          <span>{new Date(s.updated_at).toLocaleDateString()}</span>
+                          {s.ticker && (
                             <>
                               <span>·</span>
-                              <span className="font-mono-num">IV ${r.intrinsic.toFixed(2)}</span>
+                              <span className="font-mono-num">{s.ticker}</span>
                             </>
                           )}
                         </div>
@@ -227,7 +233,7 @@ export const ClientDetail = () => {
                 </Button>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {TICKERS.slice(0, 5).map((t) => (
+                {QUICK_TICKERS.map((t) => (
                   <button
                     key={t}
                     onClick={() => setTicker(t)}

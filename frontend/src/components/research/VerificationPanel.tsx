@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UploadZone } from "@/components/app/UploadZone";
 import { addDocuments, useClient } from "@/lib/clientsStore";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
 // Compact panel that drops into the research report sidebar.
@@ -13,7 +14,8 @@ import { toast } from "sonner";
 export const VerificationPanel = () => {
   const [params] = useSearchParams();
   const clientId = params.get("client");
-  const client = useClient(clientId ?? "");
+  const { client } = useClient(clientId ?? "");
+  const { user } = useAuth();
   const [showUpload, setShowUpload] = useState(false);
 
   // No client context yet — show prompt to add one
@@ -75,9 +77,14 @@ export const VerificationPanel = () => {
         ) : (
           <UploadZone
             compact
-            onFiles={(files) => {
-              addDocuments(client.id, files);
-              toast.success(`${files.length} file${files.length > 1 ? "s" : ""} attached`);
+            onFiles={async (files) => {
+              if (!user) return;
+              try {
+                await addDocuments(client.id, user.id, files);
+                toast.success(`${files.length} file${files.length > 1 ? "s" : ""} attached`);
+              } catch {
+                toast.error("Upload failed");
+              }
               setShowUpload(false);
             }}
           />
