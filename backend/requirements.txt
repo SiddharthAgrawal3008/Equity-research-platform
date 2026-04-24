@@ -1,11 +1,12 @@
 fastapi==0.109.0
 uvicorn==0.27.0
 requests==2.31.0
+yfinance==0.2.37
 pandas==2.1.4
 numpy==1.26.3
+scipy==1.11.4
 reportlab==4.1.0
 supabase==2.3.4
 python-dotenv==1.0.0
 httpx==0.25.2
 pydantic==2.5.3
-# Required environment variable: FMP_API_KEY (Financial Modeling Prep API key)
