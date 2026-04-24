@@ -188,3 +188,15 @@ RISK_WORD_THRESHOLD: float = 0.07        # E4 outputs raw frequency only;
                                          # E5 applies this threshold to flag high risk
 NLP_LOOKBACK_QUARTERS: int = 4           # Transcripts analysed for trend detection
 STALENESS_DAYS: int = 90                 # Most recent document older than this → staleness_flag
+
+# ── 14. ENGINE 1 — ALPHA VANTAGE API KEY POOL ─────────────────────────
+# Rotation pool used by financial_data.py. If ALPHA_VANTAGE_API_KEY is set
+# in .env, that key is tried first; these serve as fallback/rotation keys.
+
+AV_API_KEYS = [
+    "7S6SYRX0FO4Y629W",
+    "4A92Z90SXGQ1VKWY",
+    "1UULEYN0S6V9A0ZP",
+    "PU3U6SOA0QCW2B0E",
+    "HY18XN62PCFE1BCL",
+]

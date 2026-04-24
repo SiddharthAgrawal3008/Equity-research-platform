@@ -399,6 +399,7 @@ if __name__ == "__main__":
     sys.path.insert(0, "/home/user/Equity-research-platform")
 
     import backend.engines.engine_4_nlp as _e4
+    import backend.engines.engine_4.engine as _e4_engine
     from backend.engines.engine_4_nlp import NLPIntelligenceEngine, validate_contract
 
     # ── Mode 1: Network run (real fetchers, will degrade gracefully) ──
@@ -430,9 +431,10 @@ if __name__ == "__main__":
     def _fake_press(ticker, warnings, limit=4):
         return []
 
-    _e4._fetch_fmp_transcripts    = _fake_transcripts
-    _e4._fetch_edgar_10k          = _fake_10k
-    _e4._fetch_fmp_press_releases = _fake_press
+    # Patch in the module where the names are looked up at call time.
+    _e4_engine.fetch_fmp_transcripts    = _fake_transcripts
+    _e4_engine.fetch_edgar_10k          = _fake_10k
+    _e4_engine.fetch_fmp_press_releases = _fake_press
 
     context2 = {"financial_data": AAPL_FINANCIAL_DATA}
     t1 = time.perf_counter()
