@@ -8,15 +8,30 @@ export async function fetchResearch(
   ticker: string,
   financialOverride?: Record<string, unknown>,
 ): Promise<CompanyData> {
-  const res = await fetch(`${BASE_URL}/api/pipeline`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ticker: ticker.toUpperCase(),
-      ...(financialOverride ? { financial_override: financialOverride } : {}),
-    }),
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/api/pipeline`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticker: ticker.toUpperCase(),
+        ...(financialOverride ? { financial_override: financialOverride } : {}),
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      throw new Error(`Request timed out after 60 s — the backend may be starting up. Try again.`);
+    }
+    throw new Error(`Cannot reach backend (${(err as Error).message}). Check VITE_API_BASE_URL.`);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!res.ok) throw new Error(`Backend returned ${res.status} for ${ticker}`);
   const ctx = await res.json();
   return mapPipelineToCompanyData(ctx);
 }
