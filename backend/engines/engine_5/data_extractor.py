@@ -114,9 +114,10 @@ def extract(context: dict, available_sections: list[str]) -> ReportData:
     relative    = val.get("relative")    or {}
     rev_dcf     = val.get("reverse_dcf") or {}
 
-    beta_d  = risk.get("beta")             or {}
     mkt     = risk.get("market_risk")      or {}
     fh      = risk.get("financial_health") or {}
+    # E3 wrapper (engine_3_risk.py) does not call the red-flag detector;
+    # this will always be [] until a future E3 update wires it in.
     risk_rf = risk.get("red_flags")        or []
 
     nlp_sent   = nlp.get("sentiment")  or {}
@@ -170,14 +171,14 @@ def extract(context: dict, available_sections: list[str]) -> ReportData:
         implied_growth_rate   = rev_dcf.get("implied_growth_rate"),
         market_implied_stance = rev_dcf.get("market_implied_stance"),
 
-        beta               = beta_d.get("value"),
-        beta_benchmark     = beta_d.get("benchmark") or "S&P 500",
-        volatility         = mkt.get("historical_volatility"),
+        beta               = mkt.get("beta"),
+        beta_benchmark     = mkt.get("beta_source") or "S&P 500",
+        volatility         = mkt.get("volatility_annual") or mkt.get("historical_volatility"),
         sharpe             = mkt.get("sharpe_ratio"),
         max_drawdown       = mkt.get("max_drawdown"),
         max_drawdown_start = mkt.get("max_drawdown_start"),
         max_drawdown_end   = mkt.get("max_drawdown_end"),
-        var_95_daily       = mkt.get("var_95_daily"),
+        var_95_daily       = mkt.get("var_95") or mkt.get("var_95_daily"),
         annualized_return  = mkt.get("annualized_return"),
 
         altman_z            = fh.get("altman_z_score"),
