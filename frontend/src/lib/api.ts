@@ -4,11 +4,17 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 // ── Fetch ────────────────────────────────────────────────────────────────────
 
-export async function fetchResearch(ticker: string): Promise<CompanyData> {
+export async function fetchResearch(
+  ticker: string,
+  financialOverride?: Record<string, unknown>,
+): Promise<CompanyData> {
   const res = await fetch(`${BASE_URL}/api/pipeline`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ticker: ticker.toUpperCase() }),
+    body: JSON.stringify({
+      ticker: ticker.toUpperCase(),
+      ...(financialOverride ? { financial_override: financialOverride } : {}),
+    }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const ctx = await res.json();
