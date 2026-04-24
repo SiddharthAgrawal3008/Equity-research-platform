@@ -8,8 +8,8 @@ import sys
 from dotenv import load_dotenv
 load_dotenv()
 
-from backend.engines.financial_data import fetch_raw
-from backend.engines.engine1_standardizer import standardize
+from backend.engines.engine_1.financial_data import fetch_raw
+from backend.engines.engine_1.standardizer import standardize
 
 TICKER = sys.argv[1].upper() if len(sys.argv) > 1 else "AAPL"
 
@@ -88,7 +88,7 @@ print(f"Price:  {out.meta.current_price}")
 print(f"EV:     {out.meta.enterprise_value:.1f}M")
 print(f"Years of history: {out.quality['years_of_history']}")
 
-from backend.engines.engine1_derived import compute_derived
+from backend.engines.engine_1.derived import compute_derived
 out = compute_derived(out)
 
 print("\n=== MARGINS (latest year) ===")
@@ -113,13 +113,13 @@ print("\n=== TREND FLAGS ===")
 for k, v in out.trend_flags.items():
     print(f"  {k}: {v}")
 
-from backend.engines.engine1_ttm import compute_ttm
+from backend.engines.engine_1.ttm import compute_ttm
 out = compute_ttm(out, raw)
 print("\n=== TTM ===")
 for k, v in out.ttm.items():
     print(f"  {k}: {v}")
 
-from backend.engines.engine1_market_data import build_market_data
+from backend.engines.engine_1.market_data import build_market_data
 market_data, md_warnings = build_market_data(out.meta.ticker, out.meta.current_price)
 out.market_data = market_data
 out.quality["warnings"].extend(md_warnings)
@@ -137,7 +137,7 @@ if md_warnings:
     for w in md_warnings:
         print(f"  - {w}")
 
-from backend.engines.engine1_validator import validate
+from backend.engines.engine_1.validator import validate
 validate(out)
 print("\n=== VALIDATION RESULTS ===")
 print(f"  is_valid:                  {out.quality['is_valid']}")

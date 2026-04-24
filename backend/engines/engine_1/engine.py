@@ -15,12 +15,12 @@ Responsibilities:
 from dataclasses import asdict
 
 from backend.pipeline.base_engine import BaseEngine
-from backend.engines.financial_data import fetch_raw
-from backend.engines.engine1_standardizer import standardize
-from backend.engines.engine1_derived import compute_derived
-from backend.engines.engine1_ttm import compute_ttm
-from backend.engines.engine1_market_data import build_market_data
-from backend.engines.engine1_validator import validate
+from backend.engines.engine_1.financial_data import fetch_raw
+from backend.engines.engine_1.standardizer import standardize
+from backend.engines.engine_1.derived import compute_derived
+from backend.engines.engine_1.ttm import compute_ttm
+from backend.engines.engine_1.market_data import build_market_data
+from backend.engines.engine_1.validator import validate
 
 
 class FinancialDataEngine(BaseEngine):

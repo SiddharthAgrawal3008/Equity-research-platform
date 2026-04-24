@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from backend.engines.financial_data import DataFetchError
+from backend.engines.engine_1.financial_data import DataFetchError
 from backend.engines.shared_context import (
     AnnualFinancials,
     CompanyMeta,
