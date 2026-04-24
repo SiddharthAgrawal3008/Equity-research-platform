@@ -7,6 +7,8 @@ POST /api/pipeline  {"ticker": "AAPL"}
     → Returns the complete data bus (context) as JSON
 """
 
+import concurrent.futures
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -15,6 +17,8 @@ from backend.engines import DEFAULT_ENGINES
 from backend.db.supabase_client import save_research_result
 
 router = APIRouter()
+
+_PIPELINE_TIMEOUT_S = 90  # hard wall-clock limit per request
 
 
 class PipelineRequest(BaseModel):
@@ -26,15 +30,22 @@ class PipelineRequest(BaseModel):
 
 @router.post("/pipeline")
 def run_pipeline_endpoint(request: PipelineRequest) -> dict:
-    try:
-        result = run_pipeline(request.ticker, engines=DEFAULT_ENGINES)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(run_pipeline, request.ticker, DEFAULT_ENGINES)
+        try:
+            result = future.result(timeout=_PIPELINE_TIMEOUT_S)
+        except concurrent.futures.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail=f"Pipeline timed out after {_PIPELINE_TIMEOUT_S}s — one or more engines hung. Try again.",
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
 
-        if request.session_id and request.user_id:
-            try:
-                save_research_result(request.session_id, request.user_id, request.ticker, result)
-            except Exception:
-                pass  # never fail the response because of a DB write
+    if request.session_id and request.user_id:
+        try:
+            save_research_result(request.session_id, request.user_id, request.ticker, result)
+        except Exception:
+            pass  # never fail the response because of a DB write
 
-        return result
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    return result
