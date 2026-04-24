@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Search, SendHorizontal } from "lucide-react";
+import { Loader2, Search, SendHorizontal, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ResearchReport } from "@/components/research/ResearchReport";
 import { useAuth } from "@/context/AuthContext";
 import { useMessages } from "@/hooks/useMessages";
 import { addMessage as dbAddMessage, saveResearchResult, type Message, type Session } from "@/lib/db";
-import { fetchResearch } from "@/lib/api";
+import { fetchResearch, pingBackend, BASE_URL } from "@/lib/api";
 import type { CompanyData } from "@/lib/mockData";
 
 interface ChatPanelProps {
@@ -20,11 +20,16 @@ export function ChatPanel({ activeSession, onSessionCreate }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [pendingTicker, setPendingTicker] = useState<string | null>(null);
+  const [backendStatus, setBackendStatus] = useState<"checking" | "ok" | "error">("checking");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, pending]);
+
+  useEffect(() => {
+    pingBackend().then((ok) => setBackendStatus(ok ? "ok" : "error"));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,7 +72,7 @@ export function ChatPanel({ activeSession, onSessionCreate }: ChatPanelProps) {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : messages.length === 0 && !pending ? (
-          <EmptyState />
+          <EmptyState backendStatus={backendStatus} backendUrl={BASE_URL} />
         ) : (
           <div className="space-y-6 px-4 py-6">
             {messages.map((msg) => (
@@ -101,7 +106,13 @@ export function ChatPanel({ activeSession, onSessionCreate }: ChatPanelProps) {
   );
 }
 
-function EmptyState() {
+function EmptyState({
+  backendStatus,
+  backendUrl,
+}: {
+  backendStatus: "checking" | "ok" | "error";
+  backendUrl: string;
+}) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-4 text-center">
       <div className="rounded-full border border-border p-4">
@@ -113,6 +124,40 @@ function EmptyState() {
           Enter a ticker symbol below to get a full research report
         </p>
       </div>
+
+      {/* Backend status pill */}
+      <div className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+        {backendStatus === "checking" && (
+          <>
+            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+            <span className="text-muted-foreground">Checking backend…</span>
+          </>
+        )}
+        {backendStatus === "ok" && (
+          <>
+            <Wifi className="h-3 w-3 text-bull" />
+            <span className="text-bull font-medium">Backend connected</span>
+          </>
+        )}
+        {backendStatus === "error" && (
+          <>
+            <WifiOff className="h-3 w-3 text-bear" />
+            <span className="text-bear font-medium">Backend unreachable</span>
+            <span className="text-muted-foreground">·</span>
+            <code className="max-w-[180px] truncate font-mono text-[10px] text-muted-foreground">
+              {backendUrl}
+            </code>
+          </>
+        )}
+      </div>
+
+      {backendStatus === "error" && (
+        <p className="max-w-sm text-xs text-muted-foreground">
+          The backend is not responding at the configured URL. Check that{" "}
+          <code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">VITE_API_BASE_URL</code>{" "}
+          is set correctly in Vercel and the backend server is running.
+        </p>
+      )}
     </div>
   );
 }
@@ -127,7 +172,7 @@ function PendingBubble({ ticker }: { ticker: string }) {
       </div>
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Analyzing {ticker}…
+        Analyzing {ticker} — this may take up to 2 minutes…
       </div>
     </div>
   );

@@ -1,6 +1,20 @@
 import type { CompanyData, Rating, RiskLevel } from "./mockData";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+// Quick reachability check — 6 s timeout, returns true/false
+export async function pingBackend(): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6_000);
+  try {
+    const res = await fetch(`${BASE_URL}/health`, { signal: controller.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 // ── Fetch ────────────────────────────────────────────────────────────────────
 
@@ -9,7 +23,7 @@ export async function fetchResearch(
   financialOverride?: Record<string, unknown>,
 ): Promise<CompanyData> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
+  const timeout = setTimeout(() => controller.abort(), 180_000);
 
   let res: Response;
   try {
@@ -24,9 +38,9 @@ export async function fetchResearch(
     });
   } catch (err) {
     if ((err as Error).name === "AbortError") {
-      throw new Error(`Request timed out after 60 s — the backend may be starting up. Try again.`);
+      throw new Error(`Pipeline timed out after 3 min — the backend may be overloaded. Try again.`);
     }
-    throw new Error(`Cannot reach backend (${(err as Error).message}). Check VITE_API_BASE_URL.`);
+    throw new Error(`Cannot reach backend at ${BASE_URL}. Verify VITE_API_BASE_URL is set correctly.`);
   } finally {
     clearTimeout(timeout);
   }
