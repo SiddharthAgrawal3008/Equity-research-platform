@@ -1,21 +1,21 @@
-"""
-Engine 1 — Financial Data Engine (Owner: Divyansh)
+﻿"""
+Engine 1 â€” Financial Data Engine (Owner: Divyansh)
 ===================================================
 
-Wires the Step 1–6 sub-modules into the orchestrator's BaseEngine contract:
+Wires the Step 1â€“6 sub-modules into the orchestrator's BaseEngine contract:
 
-    fetch_raw          (financial_data.py — parent package)
-        ↓
+    fetch_raw          (financial_data.py â€” parent package)
+        â†“
     standardize        (engine1_standardizer.py)
-        ↓
+        â†“
     compute_derived    (engine1_derived.py)
-        ↓
+        â†“
     compute_ttm        (engine1_ttm.py)
-        ↓
+        â†“
     build_market_data  (engine1_market_data.py)
-        ↓
+        â†“
     validate           (engine1_validator.py)
-        ↓
+        â†“
     _to_bus_dict       (this file)
 
 Reads:  context["ticker"]
@@ -35,6 +35,12 @@ from backend.engines.engine_1.engine1_validator import validate
 from backend.engines.financial_data import fetch_raw
 from backend.engines.shared_context import Engine1Output
 from backend.pipeline.base_engine import BaseEngine
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -96,3 +102,4 @@ class FinancialDataEngine(BaseEngine):
             "cost_structure": output.cost_structure,
             "trend_flags":    output.trend_flags,
         }
+
