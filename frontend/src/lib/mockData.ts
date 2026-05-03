@@ -46,6 +46,7 @@ export interface CompanyData {
     thesis: string;
     bearCase: string;
   };
+  generatedAt?: string; // ISO timestamp from pipeline
 }
 
 const mc = (mu: number, span: number) => {

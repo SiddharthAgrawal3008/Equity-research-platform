@@ -83,6 +83,11 @@ export const ResearchReport = ({
               </span>
             </div>
             <div className="mt-1 text-xs text-muted-foreground">Mkt Cap {c.marketCap}</div>
+            {c.generatedAt && (
+              <div className="mt-2 text-[11px] text-muted-foreground">
+                As of {new Date(c.generatedAt).toLocaleString()}
+              </div>
+            )}
           </div>
 
           <nav className="rounded-xl border border-border bg-card p-2 shadow-card lg:sticky lg:top-20">
