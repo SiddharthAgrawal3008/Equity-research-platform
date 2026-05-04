@@ -340,40 +340,29 @@ function EnginesSection() {
         />
 
         {/* Stage diagram */}
-        <div className="mt-20 grid md:grid-cols-12 gap-6">
-          {/* Stage 1 */}
-          <div className="md:col-span-3">
-            <StageLabel n={1} label="Ingest" />
-            <EngineCard e={ENGINES[0]} />
+        <div className="mt-20 space-y-4">
+          {/* Stage 1 — full width */}
+          <StageLabel n={1} label="Ingest" />
+          <EngineCard e={ENGINES[0]} />
+
+          <Connector />
+
+          {/* Stage 2 — three equal columns */}
+          <StageLabel n={2} label="Parallel analysis" />
+          <div className="grid md:grid-cols-3 gap-4">
+            <EngineCard e={ENGINES[1]} />
+            <EngineCard e={ENGINES[2]} />
+            <EngineCard e={ENGINES[3]} />
           </div>
 
-          {/* connector */}
-          <div className="hidden md:flex md:col-span-1 items-center justify-center">
-            <Connector />
-          </div>
+          <Connector />
 
-          {/* Stage 2 */}
-          <div className="md:col-span-5">
-            <StageLabel n={2} label="Parallel analysis" />
-            <div className="grid grid-cols-1 gap-4">
-              <EngineCard e={ENGINES[1]} />
-              <EngineCard e={ENGINES[2]} />
-              <EngineCard e={ENGINES[3]} />
-            </div>
-          </div>
-
-          <div className="hidden md:flex md:col-span-1 items-center justify-center">
-            <Connector />
-          </div>
-
-          {/* Stage 3 */}
-          <div className="md:col-span-2">
-            <StageLabel n={3} label="Synthesize" />
-            <EngineCard e={ENGINES[4]} />
-          </div>
+          {/* Stage 3 — full width */}
+          <StageLabel n={3} label="Synthesize" />
+          <EngineCard e={ENGINES[4]} />
         </div>
 
-        <div className="mt-12 flex flex-wrap gap-x-8 gap-y-3 font-mono text-[10px] uppercase tracking-[0.25em] text-terminal-dim">
+        <div className="mt-12 pt-6 border-t border-terminal-line flex flex-wrap items-center gap-x-8 gap-y-2 font-mono text-[10px] uppercase tracking-[0.25em] text-terminal-dim">
           <span><span className="text-gold">●</span> 57 python files</span>
           <span><span className="text-gold">●</span> typed data bus</span>
           <span><span className="text-gold">●</span> error isolation</span>
@@ -396,9 +385,9 @@ function StageLabel({ n, label }: { n: number; label: string }) {
 
 function Connector() {
   return (
-    <div className="relative w-full h-px">
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-gold/60 to-transparent" />
-      <div className="absolute right-0 top-1/2 -translate-y-1/2 text-gold">→</div>
+    <div className="flex flex-col items-center gap-1 py-2">
+      <div className="w-px h-8 bg-gradient-to-b from-gold/60 to-transparent" />
+      <span className="font-mono text-gold text-sm leading-none">↓</span>
     </div>
   );
 }
