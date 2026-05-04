@@ -77,7 +77,7 @@ function Hero() {
           </div>
 
           {/* Right: vertical metadata column */}
-          <div className="md:col-span-4 md:pl-8 md:border-l border-foreground/15">
+          <div className="md:col-span-4 md:pl-8 md:border-l border-foreground/15 self-end">
             <div className="space-y-6 font-mono text-[11px] uppercase tracking-[0.18em]">
               <MetaRow k="Engines" v="05 · parallel" />
               <MetaRow k="Sources" v="AV · Finnhub · EDGAR · FMP" />
@@ -172,34 +172,26 @@ function TerminalInput({ ticker, setTicker, onRun, phase }: any) {
               <button
                 key={t}
                 onClick={() => setTicker(t)}
-                className="px-2 py-1 border border-terminal-line hover:border-gold hover:text-gold transition-colors"
+                className="px-2 py-1 border border-terminal-line hover:border-gold hover:bg-gold hover:text-ink transition-colors"
               >
                 {t}
               </button>
             ))}
           </div>
 
-          <button
-            onClick={onRun}
-            disabled={phase === "running"}
-            className="group mt-10 inline-flex items-center gap-4 font-mono text-xs uppercase tracking-[0.3em]"
+          <Link
+            to="/signup"
+            className="group mt-10 inline-flex items-center gap-4 font-mono text-xs uppercase tracking-[0.3em] hover:bg-gold hover:text-ink transition-colors"
           >
             <span className="relative flex items-center justify-center h-14 w-14 rounded-full bg-gold text-ink transition-transform group-hover:scale-110">
-              {phase === "running" ? (
-                <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.3" />
-                  <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" />
-                </svg>
-              ) : (
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M5 12h14M13 6l6 6-6 6" />
-                </svg>
-              )}
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
             </span>
-            <span className="text-terminal-foreground group-hover:text-gold transition-colors">
-              {phase === "running" ? "Pipeline running…" : "Generate research memo"}
+            <span className="text-terminal-foreground group-hover:text-ink transition-colors">
+              Generate research memo
             </span>
-          </button>
+          </Link>
         </div>
 
         {/* Live pipeline panel */}
