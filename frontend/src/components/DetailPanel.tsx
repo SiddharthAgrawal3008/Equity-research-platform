@@ -12,10 +12,11 @@ interface Props {
 function fmtM(val: number | null | undefined): string {
   if (val == null) return "—";
   const abs = Math.abs(val);
-  if (abs >= 1e6) return `$${(val / 1e6).toFixed(2)}T`;
-  if (abs >= 1e3) return `$${(val / 1e3).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `$${(val / 1_000_000).toFixed(2)}T`;
+  if (abs >= 1_000) return `$${(val / 1_000).toFixed(1)}B`;
   if (abs >= 1) return `$${val.toFixed(1)}M`;
-  return `$${val.toFixed(2)}M`;
+  if (abs > 0) return `${(val * 100).toFixed(1)}%`;
+  return "—";
 }
 
 function fmtPct(val: number | null | undefined): string {
@@ -53,7 +54,7 @@ export function DetailPanel({ type, data, fullContext, onClose, fullscreen, onTo
         </div>
       </div>
 
-      <div className={`p-6 ${fullscreen ? "max-w-4xl mx-auto" : ""}`}>
+      <div className={`p-8 ${fullscreen ? "max-w-4xl mx-auto" : ""}`}>
         {type === "company-header" && <FinancialDetail data={data} />}
         {type === "valuation" && <ValuationDetail data={data} />}
         {type === "risk" && <RiskDetail data={data} />}
@@ -66,7 +67,7 @@ export function DetailPanel({ type, data, fullContext, onClose, fullscreen, onTo
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mb-8">
+    <div className="mb-10">
       <h3 className="font-mono text-[10px] uppercase tracking-[0.3em] text-gold mb-4 pb-2 border-b border-foreground/10">
         {title}
       </h3>
@@ -179,7 +180,7 @@ function ValuationDetail({ data }: { data: any }) {
               </thead>
               <tbody>
                 {(sens.value_matrix || []).map((row: number[], ri: number) => (
-                  <tr key={ri} className="border-t border-foreground/5">
+                  <tr key={ri} className={`border-t border-foreground/5 ${ri % 2 === 0 ? "bg-foreground/[0.02]" : ""}`}>
                     <td className="py-1.5 px-2 text-muted-foreground font-medium">{((sens.wacc_range || [])[ri] * 100).toFixed(1)}%</td>
                     {row.map((val: number, ci: number) => {
                       const isBase = ri === sens.base_case_wacc_idx && ci === sens.base_case_growth_idx;
@@ -309,15 +310,19 @@ function ReportDetail({ data }: { data: any }) {
     <>
       {summary && (
         <Section title="Executive summary">
-          <p className="text-sm text-ink leading-relaxed font-medium">{summary}</p>
+          <div className="border-l-2 border-gold/60 pl-4">
+            <p className="text-base italic text-ink leading-relaxed">{summary}</p>
+          </div>
         </Section>
       )}
       {Object.entries(sections).map(([name, text], i) => (
         <Section key={name} title={`${String(i + 1).padStart(2, "0")} · ${name.replace(/_/g, " ")}`}>
-          <div className="text-sm text-ink leading-[1.8] whitespace-pre-wrap">
-            {String(text as string).split("\n").map((para, pi) => (
-              para.trim() ? <p key={pi} className="mb-3">{para}</p> : null
-            ))}
+          <div className="border-l-2 border-gold/30 pl-4">
+            <div className="text-sm text-ink leading-[1.8]">
+              {String(text as string).split("\n").map((para, pi) =>
+                para.trim() ? <p key={pi} className="mb-4">{para}</p> : null
+              )}
+            </div>
           </div>
         </Section>
       ))}
