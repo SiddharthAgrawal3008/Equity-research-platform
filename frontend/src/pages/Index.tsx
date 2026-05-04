@@ -768,14 +768,14 @@ function FinalCTA() {
           No signup. No paywall. Just type a symbol and read what the engines wrote.
         </p>
 
-        <a
-          href="#top"
+        <Link
+          to="/signup"
           className="group mt-12 inline-flex items-center gap-4 px-6 py-4 bg-ink text-paper hover:bg-gold hover:text-ink transition-colors font-mono text-xs uppercase tracking-[0.3em]"
         >
           <span className="font-serif-display text-base normal-case tracking-normal">$</span>
           Enter ticker
           <span className="inline-block transition-transform group-hover:translate-x-1">→</span>
-        </a>
+        </Link>
       </div>
     </section>
   );
@@ -841,7 +841,7 @@ function Footer() {
               Equity research, computed. · Vol. I · MMXXVI
             </p>
           </div>
-          <div className="md:col-span-6 grid grid-cols-2 gap-4 font-mono text-[10px] uppercase tracking-[0.25em]">
+          <div className="md:col-span-6 grid grid-cols-3 gap-4 font-mono text-[10px] uppercase tracking-[0.25em]">
             <div>
               <div className="text-paper/40 mb-2">Built by</div>
               <div className="space-y-1 text-paper/80">
@@ -858,6 +858,13 @@ function Footer() {
                 <div>React · Vite · Framer</div>
                 <div>Alpha Vantage · Finnhub</div>
                 <div>EDGAR · FMP</div>
+              </div>
+            </div>
+            <div>
+              <div className="text-paper/40 mb-2">Links</div>
+              <div className="space-y-1">
+                <div><Link to="/login" className="text-paper/50 hover:text-paper transition-colors">Sign in</Link></div>
+                <div><Link to="/signup" className="text-paper/50 hover:text-paper transition-colors">Get started</Link></div>
               </div>
             </div>
           </div>
