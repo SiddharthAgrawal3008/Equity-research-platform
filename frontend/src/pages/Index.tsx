@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, useScroll, useTransform, useInView } from "framer-motion";
+import { Link } from "react-router-dom";
 
 // ─────────────────────────────────────────────────────────────
 // EQUIMIND — Editorial Terminal
@@ -839,9 +840,10 @@ function Nav() {
           <a href="#engines" className="hover:text-ink">Engines</a>
           <a href="#method" className="hover:text-ink">Method</a>
           <a href="#memo" className="hover:text-ink">Memo</a>
-          <a href="#top" className="inline-flex items-center gap-2 px-3 py-1.5 bg-ink text-paper hover:bg-gold hover:text-ink transition-colors">
+          <Link to="/login" className="hover:text-ink">Sign in</Link>
+          <Link to="/signup" className="inline-flex items-center gap-2 px-3 py-1.5 bg-ink text-paper hover:bg-gold hover:text-ink transition-colors">
             Run a ticker →
-          </a>
+          </Link>
         </div>
       </div>
     </nav>
