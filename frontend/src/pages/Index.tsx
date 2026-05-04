@@ -645,25 +645,22 @@ function MethodSection() {
           desc="Engines never call each other. They read from a typed shared context and write back. The orchestrator resolves a DAG and dispatches stages."
         />
 
-        <div className="mt-20 grid md:grid-cols-12 gap-12 items-start">
+        <div className="mt-20 grid md:grid-cols-2 gap-8 items-start">
           {/* DAG */}
-          <div className="md:col-span-7">
-            <div className="bg-terminal text-terminal-foreground p-8 rounded-sm relative overflow-hidden">
-              <div className="absolute inset-0 grid-bg opacity-[0.06]" />
-              <div className="relative">
-                <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-terminal-dim mb-6">
-                  → resolve_stages(DAG) → ThreadPoolExecutor
-                </div>
-                <DAGDiagram />
+          <div className="bg-terminal text-terminal-foreground p-8 rounded-sm relative overflow-hidden">
+            <div className="absolute inset-0 grid-bg opacity-[0.06]" />
+            <div className="relative">
+              <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-terminal-dim mb-6">
+                → resolve_stages(DAG) → ThreadPoolExecutor
               </div>
+              <DAGDiagram />
             </div>
           </div>
 
           {/* Code excerpt */}
-          <div className="md:col-span-5">
-            <div className="bg-terminal text-terminal-foreground p-6 rounded-sm font-mono text-[12px] leading-relaxed">
-              <div className="text-terminal-dim mb-3 text-[10px] uppercase tracking-[0.25em]">pipeline/orchestrator.py</div>
-              <pre className="whitespace-pre-wrap text-terminal-foreground/90">
+          <div className="bg-terminal text-terminal-foreground p-8 rounded-sm font-mono text-[13px] leading-relaxed">
+            <div className="text-terminal-dim mb-4 text-[10px] uppercase tracking-[0.25em]">pipeline/orchestrator.py</div>
+            <pre className="whitespace-pre-wrap text-terminal-foreground/90">
 <span className="text-gold">class</span> <span className="text-sig-nlp">BaseEngine</span>(ABC):
     name: <span className="text-sig-data">str</span>
     requires: list[<span className="text-sig-data">str</span>]
@@ -674,8 +671,7 @@ function MethodSection() {
 
 <span className="text-terminal-dim"># E1 fatal · E2/3/4 graceful</span>
 <span className="text-terminal-dim"># Stage 2 runs in parallel</span>
-              </pre>
-            </div>
+            </pre>
           </div>
         </div>
       </div>
@@ -731,7 +727,7 @@ function Bench() {
     { k: "6", u: "sections", l: "Per generated memo" },
   ];
   return (
-    <section className="bg-ink text-paper py-20 relative">
+    <section className="bg-ink text-paper py-20 relative border-t border-foreground/10">
       <div className="container max-w-7xl">
         <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-paper/10 border-y border-paper/10 py-8">
           {stats.map((s, i) => (
@@ -741,7 +737,7 @@ function Bench() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: i * 0.1 }}
-              className="px-6 first:pl-0"
+              className="px-6"
             >
               <div className="flex items-baseline gap-2">
                 <span className="font-serif-display text-6xl md:text-7xl tracking-tight">{s.k}</span>
