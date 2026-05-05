@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 
-from backend.engines.shared_config import ZSCORE_DISTRESS
+from backend.engines.shared_config import EARNINGS_QUALITY_HIGH_THRESHOLD, ZSCORE_DISTRESS
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +190,57 @@ def detect_red_flags(
                 logger.debug("Flag 6 not triggered: FCF negative %d/%d", neg_count, len(valid))
     except Exception as exc:
         logger.warning("Flag 6 (negative FCF) check failed: %s", exc)
+
+    # ── Flag 7: Anomalous Earnings Quality (OCF >>> NI) ──────────────────
+    try:
+        quality = financial_data.get("quality", {})
+        is_reit = quality.get("is_reit", False)
+        is_bank = quality.get("is_bank", False)
+        if not is_reit and not is_bank:
+            ocf = financials.get("operating_cash_flow", [])
+            ni = financials.get("net_income", [])
+            window = min(3, len(ocf), len(ni))
+            if window > 0:
+                extreme_count = 0
+                checked = 0
+                for i in range(len(ocf) - window, len(ocf)):
+                    if (ocf[i] is not None and ocf[i] > 0
+                            and ni[i] is not None and ni[i] != 0):
+                        checked += 1
+                        if ocf[i] / ni[i] > EARNINGS_QUALITY_HIGH_THRESHOLD:
+                            extreme_count += 1
+                if checked > 0 and extreme_count >= 1:
+                    flags.append(
+                        f"Earnings quality anomalous: OCF exceeded net income by "
+                        f"more than {EARNINGS_QUALITY_HIGH_THRESHOLD:.0f}x in "
+                        f"{extreme_count} of {checked} recent years — investigate "
+                        f"non-cash adjustments"
+                    )
+    except Exception as exc:
+        logger.warning("Flag 7 (anomalous earnings quality) check failed: %s", exc)
+
+    # ── Flag 8: Persistent Negative Interest Coverage ────────────────────
+    try:
+        ebit_series = financials.get("ebit", [])
+        interest_series = financials.get("interest_expense", [])
+        window = min(3, len(ebit_series), len(interest_series))
+        if window > 0:
+            neg_count = 0
+            checked = 0
+            for i in range(len(ebit_series) - window, len(ebit_series)):
+                ebit_val = ebit_series[i]
+                int_val = interest_series[i]
+                if ebit_val is not None and int_val is not None and int_val > 0:
+                    checked += 1
+                    if ebit_val < int_val:
+                        neg_count += 1
+            if checked > 0 and neg_count >= 2:
+                flags.append(
+                    f"EBIT failed to cover interest expense in {neg_count} "
+                    f"of {checked} recent years — persistent debt service risk"
+                )
+    except Exception as exc:
+        logger.warning("Flag 8 (negative interest coverage) check failed: %s", exc)
 
     logger.info("Red flag scan complete: %d flag(s) triggered", len(flags))
     return flags
