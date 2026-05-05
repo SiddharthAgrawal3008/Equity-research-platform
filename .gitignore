@@ -38,3 +38,4 @@ logs/
 *.p12
 *_secret*
 *_credentials*
+env.txt
