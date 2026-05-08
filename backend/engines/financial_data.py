@@ -243,6 +243,12 @@ def _fetch_yfinance_fallback(symbol: str) -> dict:
     Pull financial data via yfinance when all Alpha Vantage keys are exhausted.
     Returns the identical dict structure as fetch_raw() so downstream steps
     (standardiser, validator, TTM) work without modification.
+
+    Yahoo Finance blocks t.info on cloud IPs (Render, AWS, etc.) with 429.
+    We skip t.info entirely and use:
+      - t.history()     for current price  (uses chart endpoint, not blocked)
+      - t.fast_info     for market cap / shares (lighter endpoint)
+      - t.financials / t.balance_sheet / t.cashflow  (timeseries endpoint, not blocked)
     """
     import yfinance as yf
 
@@ -250,38 +256,51 @@ def _fetch_yfinance_fallback(symbol: str) -> dict:
 
     try:
         t = yf.Ticker(symbol)
-        info = t.info or {}
 
-        current_price = (
-            info.get("currentPrice")
-            or info.get("regularMarketPrice")
-            or info.get("previousClose")
-            or 0.0
-        )
+        # ── Price: use history endpoint (not blocked on cloud IPs) ──────────
+        current_price = 0.0
+        try:
+            hist = t.history(period="5d")
+            if not hist.empty:
+                current_price = float(hist["Close"].iloc[-1])
+        except Exception as e:
+            logger.warning("Engine 1 | yfinance | history failed (%s)", e)
 
-        if not current_price and not info.get("longName"):
+        if not current_price:
             raise TickerNotFoundError(
                 f"Ticker '{symbol}' not found. Please check the symbol and try again."
             )
 
+        # ── Company metadata: fast_info (lighter than t.info) ───────────────
+        market_cap = 0
+        shares_outstanding = 0
+        currency = "USD"
+        try:
+            fi = t.fast_info
+            market_cap         = int(getattr(fi, "market_cap",        0) or 0)
+            shares_outstanding = int(getattr(fi, "shares",            0) or 0)
+            currency           = str(getattr(fi, "currency",       "USD") or "USD")
+        except Exception as e:
+            logger.warning("Engine 1 | yfinance | fast_info failed (%s)", e)
+
         overview = {
             "Symbol":                symbol,
-            "Name":                  info.get("longName") or info.get("shortName") or symbol,
-            "Description":           info.get("longBusinessSummary", ""),
-            "Sector":                info.get("sector", ""),
-            "Industry":              info.get("industry", ""),
-            "Exchange":              info.get("exchange", ""),
-            "Currency":              info.get("currency", "USD"),
-            "MarketCapitalization":  str(info.get("marketCap") or 0),
-            "SharesOutstanding":     str(info.get("sharesOutstanding") or 0),
-            "EPS":                   str(info.get("trailingEps") or 0),
-            "PERatio":               str(info.get("trailingPE") or 0),
-            "PriceToBookRatio":      str(info.get("priceToBook") or 0),
-            "Beta":                  str(info.get("beta") or 1.0),
-            "52WeekHigh":            str(info.get("fiftyTwoWeekHigh") or 0),
-            "52WeekLow":             str(info.get("fiftyTwoWeekLow") or 0),
-            "DividendYield":         str(info.get("dividendYield") or 0),
-            "BookValue":             str(info.get("bookValue") or 0),
+            "Name":                  symbol,   # t.info blocked on cloud; name filled downstream
+            "Description":           "",
+            "Sector":                "",
+            "Industry":              "",
+            "Exchange":              "",
+            "Currency":              currency,
+            "MarketCapitalization":  str(market_cap),
+            "SharesOutstanding":     str(shares_outstanding),
+            "EPS":                   "0",
+            "PERatio":               "0",
+            "PriceToBookRatio":      "0",
+            "Beta":                  "1.0",
+            "52WeekHigh":            "0",
+            "52WeekLow":             "0",
+            "DividendYield":         "0",
+            "BookValue":             "0",
         }
 
         def _df_to_reports(df, field_map: dict) -> list[dict]:
