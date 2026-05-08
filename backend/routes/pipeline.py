@@ -7,7 +7,7 @@ POST /api/pipeline  {"ticker": "AAPL"}
     → Returns the complete data bus (context) as JSON
 """
 
-import concurrent.futures
+import threading
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -30,17 +30,35 @@ class PipelineRequest(BaseModel):
 
 @router.post("/pipeline")
 def run_pipeline_endpoint(request: PipelineRequest) -> dict:
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(run_pipeline, request.ticker, DEFAULT_ENGINES)
+    result_box: dict = {}
+    error_box:  dict = {}
+    done = threading.Event()
+
+    def _run() -> None:
         try:
-            result = future.result(timeout=_PIPELINE_TIMEOUT_S)
-        except concurrent.futures.TimeoutError:
-            raise HTTPException(
-                status_code=504,
-                detail=f"Pipeline timed out after {_PIPELINE_TIMEOUT_S}s — one or more engines hung. Try again.",
-            )
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
+            result_box["v"] = run_pipeline(request.ticker, DEFAULT_ENGINES)
+        except Exception as exc:  # noqa: BLE001
+            error_box["v"] = exc
+        finally:
+            done.set()
+
+    # Daemon thread: if we return before it finishes it won't block the process.
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
+    if not done.wait(timeout=_PIPELINE_TIMEOUT_S):
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"Pipeline timed out after {_PIPELINE_TIMEOUT_S}s — "
+                "an engine is stalling on an external API call. Try again."
+            ),
+        )
+
+    if "v" in error_box:
+        raise HTTPException(status_code=500, detail=str(error_box["v"]))
+
+    result = result_box["v"]
 
     if request.session_id and request.user_id:
         try:

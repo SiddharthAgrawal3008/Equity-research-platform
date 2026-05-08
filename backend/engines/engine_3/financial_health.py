@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 
 from backend.engines.shared_config import (
+    EARNINGS_QUALITY_HIGH_THRESHOLD,
     ZSCORE_DISTRESS,
     ZSCORE_EXCLUDED_SECTORS,
     ZSCORE_SAFE,
@@ -164,6 +165,12 @@ def compute_financial_health(financial_data: dict) -> dict:
         logger.warning("Interest coverage computation failed: %s", exc)
         warnings.append(f"Interest coverage computation failed: {exc}")
 
+    if interest_coverage is not None and interest_coverage < 0:
+        warnings.append(
+            f"Interest coverage is negative ({interest_coverage:.2f}x) — "
+            f"EBITDA does not cover interest expense, indicating operational losses"
+        )
+
     # ── D. Debt/EBITDA (TTM EBITDA; latest total_debt) ───────────────
     debt_to_ebitda = None
     try:
@@ -243,6 +250,18 @@ def compute_financial_health(financial_data: dict) -> dict:
             )
         else:
             earnings_quality = round(_safe_div(ocf, ni), 4)
+            if earnings_quality is not None and not is_reit and not is_bank:
+                if earnings_quality > EARNINGS_QUALITY_HIGH_THRESHOLD:
+                    warnings.append(
+                        f"Earnings quality ratio {earnings_quality:.1f}x is anomalously high "
+                        f"(OCF vastly exceeds net income) — likely driven by large non-cash "
+                        f"charges or working capital swings"
+                    )
+                elif earnings_quality < 0:
+                    warnings.append(
+                        "Earnings quality ratio is negative — operating cash flow "
+                        "and net income have opposite signs"
+                    )
     except Exception as exc:
         logger.warning("Earnings quality computation failed: %s", exc)
         warnings.append(f"Earnings quality computation failed: {exc}")

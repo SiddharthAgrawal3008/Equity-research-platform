@@ -70,6 +70,7 @@ DRAWDOWN_LOOKBACK_YEARS: int = 5
 ZSCORE_SAFE: float = 2.99               # Altman Z-score: above = safe zone
 ZSCORE_DISTRESS: float = 1.81           # Below = distress zone
 ZSCORE_EXCLUDED_SECTORS: set[str] = {"Financials", "Real Estate"}
+EARNINGS_QUALITY_HIGH_THRESHOLD: float = 5.0    # OCF/NI above this is anomalous
 
 # ── 7.  GUARD RAILS (Engine 2 sanity checks) ──────────────────────────
 
@@ -83,6 +84,10 @@ TV_WARNING_THRESHOLD: float = 0.85      # Flag if terminal value > 85 % of EV
 TV_CRITICAL_THRESHOLD: float = 0.90     # Strong warning if > 90 %
 DCF_EXTREME_HIGH: float = 10.0          # Flag if implied price > 10× current
 DCF_EXTREME_LOW: float = 0.1            # Flag if implied price < 0.1× current
+
+# ── RELATIVE VALUATION GUARD RAILS ─────────────────────────────────────
+RELATIVE_DIVERGENCE_MAX: float = 10.0   # Max ratio between highest and lowest implied prices
+RELATIVE_EXTREME_UPSIDE: float = 5.0    # Flag if relative-only upside exceeds 500%
 
 # ── 7b. REVERSE DCF PARAMETERS ────────────────────────────────────────
 
