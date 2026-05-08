@@ -45,7 +45,7 @@ export interface Message {
   user_id: string;
   role: "user" | "assistant";
   content: string;
-  type: "text" | "research" | "error";
+  type: "text" | "research" | "error" | "chat";
   metadata: Record<string, unknown> | null;
   created_at: string;
 }
@@ -75,7 +75,7 @@ export async function addMessage(
   userId: string,
   role: "user" | "assistant",
   content: string,
-  type: "text" | "research" | "error",
+  type: "text" | "research" | "error" | "chat",
   metadata?: Record<string, unknown>,
 ): Promise<Message> {
   const { data, error } = await supabase
