@@ -195,13 +195,15 @@ NLP_LOOKBACK_QUARTERS: int = 4           # Transcripts analysed for trend detect
 STALENESS_DAYS: int = 90                 # Most recent document older than this → staleness_flag
 
 # ── 14. ENGINE 1 — ALPHA VANTAGE API KEY POOL ─────────────────────────
-# Rotation pool used by financial_data.py. If ALPHA_VANTAGE_API_KEY is set
-# in .env, that key is tried first; these serve as fallback/rotation keys.
+# Keys are loaded from environment variables — never hardcode here.
+# Set ALPHA_VANTAGE_API_KEY on Render (primary key).
+# Set AV_API_KEYS_EXTRA as a comma-separated list for additional rotation keys.
+# If no keys are configured, Engine 1 falls back to yfinance automatically.
 
-AV_API_KEYS = [
-    "7S6SYRX0FO4Y629W",
-    "4A92Z90SXGQ1VKWY",
-    "1UULEYN0S6V9A0ZP",
-    "PU3U6SOA0QCW2B0E",
-    "HY18XN62PCFE1BCL",
+import os as _os
+
+AV_API_KEYS: list[str] = [
+    k.strip()
+    for k in _os.environ.get("AV_API_KEYS_EXTRA", "").split(",")
+    if k.strip()
 ]
