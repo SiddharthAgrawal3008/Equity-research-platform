@@ -235,6 +235,149 @@ def _fh_get(endpoint: str, params: dict, fh_key: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# yfinance Fallback (used when all AV keys are rate-limited)
+# ---------------------------------------------------------------------------
+
+def _fetch_yfinance_fallback(symbol: str) -> dict:
+    """
+    Pull financial data via yfinance when all Alpha Vantage keys are exhausted.
+    Returns the identical dict structure as fetch_raw() so downstream steps
+    (standardiser, validator, TTM) work without modification.
+    """
+    import yfinance as yf
+
+    logger.info("Engine 1 | yfinance fallback | fetching '%s'", symbol)
+
+    try:
+        t = yf.Ticker(symbol)
+        info = t.info or {}
+
+        current_price = (
+            info.get("currentPrice")
+            or info.get("regularMarketPrice")
+            or info.get("previousClose")
+            or 0.0
+        )
+
+        if not current_price and not info.get("longName"):
+            raise TickerNotFoundError(
+                f"Ticker '{symbol}' not found. Please check the symbol and try again."
+            )
+
+        overview = {
+            "Symbol":                symbol,
+            "Name":                  info.get("longName") or info.get("shortName") or symbol,
+            "Description":           info.get("longBusinessSummary", ""),
+            "Sector":                info.get("sector", ""),
+            "Industry":              info.get("industry", ""),
+            "Exchange":              info.get("exchange", ""),
+            "Currency":              info.get("currency", "USD"),
+            "MarketCapitalization":  str(info.get("marketCap") or 0),
+            "SharesOutstanding":     str(info.get("sharesOutstanding") or 0),
+            "EPS":                   str(info.get("trailingEps") or 0),
+            "PERatio":               str(info.get("trailingPE") or 0),
+            "PriceToBookRatio":      str(info.get("priceToBook") or 0),
+            "Beta":                  str(info.get("beta") or 1.0),
+            "52WeekHigh":            str(info.get("fiftyTwoWeekHigh") or 0),
+            "52WeekLow":             str(info.get("fiftyTwoWeekLow") or 0),
+            "DividendYield":         str(info.get("dividendYield") or 0),
+            "BookValue":             str(info.get("bookValue") or 0),
+        }
+
+        def _df_to_reports(df, field_map: dict) -> list[dict]:
+            if df is None or df.empty:
+                return []
+            reports = []
+            for col in df.columns:
+                date_str = str(col)[:10]
+                report: dict = {"fiscalDateEnding": date_str, "reportedCurrency": "USD"}
+                for yf_key, av_key in field_map.items():
+                    val = df.loc[yf_key, col] if yf_key in df.index else None
+                    if val is None or (isinstance(val, float) and (val != val)):
+                        report[av_key] = "None"
+                    else:
+                        try:
+                            report[av_key] = str(int(val))
+                        except (TypeError, ValueError):
+                            report[av_key] = str(val)
+                reports.append(report)
+            return reports
+
+        INCOME_MAP = {
+            "Total Revenue":                        "totalRevenue",
+            "Gross Profit":                         "grossProfit",
+            "Cost Of Revenue":                      "costOfRevenue",
+            "Operating Income":                     "operatingIncome",
+            "Ebit":                                 "ebit",
+            "Ebitda":                               "ebitda",
+            "Net Income":                           "netIncome",
+            "Net Income Common Stockholders":       "netIncomeFromContinuingOperations",
+            "Research And Development":             "researchAndDevelopment",
+            "Selling General And Administration":   "sellingGeneralAndAdministrative",
+            "Operating Expense":                    "operatingExpenses",
+            "Reconciled Depreciation":              "depreciationAndAmortization",
+            "Tax Provision":                        "incomeTaxExpense",
+            "Interest Expense Non Operating":       "interestAndDebtExpense",
+        }
+        BALANCE_MAP = {
+            "Total Assets":                                 "totalAssets",
+            "Current Assets":                              "totalCurrentAssets",
+            "Cash And Cash Equivalents":                   "cashAndCashEquivalentsAtCarryingValue",
+            "Total Liabilities Net Minority Interest":     "totalLiabilities",
+            "Current Liabilities":                         "totalCurrentLiabilities",
+            "Stockholders Equity":                         "totalShareholderEquity",
+            "Long Term Debt":                              "longTermDebt",
+            "Current Debt":                                "currentLongTermDebt",
+            "Inventory":                                   "inventory",
+            "Receivables":                                 "currentNetReceivables",
+            "Retained Earnings":                           "retainedEarnings",
+            "Share Issued":                                "commonStockSharesOutstanding",
+        }
+        CASHFLOW_MAP = {
+            "Operating Cash Flow":                  "operatingCashflow",
+            "Capital Expenditure":                  "capitalExpenditures",
+            "Investing Cash Flow":                  "cashflowFromInvestment",
+            "Financing Cash Flow":                  "cashflowFromFinancing",
+            "Net Income":                           "netIncome",
+            "Depreciation Amortization Depletion":  "depreciationDepletionAndAmortization",
+            "Common Stock Dividend Paid":           "dividendPayout",
+        }
+
+        annual_income      = _df_to_reports(t.financials,           INCOME_MAP)
+        annual_balance     = _df_to_reports(t.balance_sheet,        BALANCE_MAP)
+        annual_cashflow    = _df_to_reports(t.cashflow,             CASHFLOW_MAP)
+        quarterly_income   = _df_to_reports(t.quarterly_financials, INCOME_MAP)
+        quarterly_cashflow = _df_to_reports(t.quarterly_cashflow,   CASHFLOW_MAP)
+
+        if not annual_income and not annual_balance and not annual_cashflow:
+            raise CompanyDataUnavailableError(
+                f"'{symbol}' has no publicly available financial statements."
+            )
+
+        logger.info(
+            "Engine 1 | yfinance fallback | success for '%s' | periods: %d | price: %.2f",
+            symbol, len(annual_income), current_price,
+        )
+
+        return {
+            "ticker":             symbol,
+            "pull_timestamp":     datetime.now(timezone.utc).isoformat(),
+            "overview":           overview,
+            "annual_income":      annual_income,
+            "annual_balance":     annual_balance,
+            "annual_cashflow":    annual_cashflow,
+            "quarterly_income":   quarterly_income,
+            "quarterly_cashflow": quarterly_cashflow,
+            "current_price":      current_price,
+        }
+
+    except (TickerNotFoundError, CompanyDataUnavailableError):
+        raise
+    except Exception as exc:
+        raise DataFetchError(f"yfinance fallback failed for '{symbol}': {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
 # Main Entry Point for Step 1
 # ---------------------------------------------------------------------------
 
@@ -278,6 +421,16 @@ def fetch_raw(ticker_symbol: str) -> dict:
     symbol = ticker_symbol.strip().upper()
     logger.info("Engine 1 | fetch_raw | starting pull for '%s'", symbol)
 
+    # ── AV path ─────────────────────────────────────────────────────────────
+    try:
+        return _fetch_av(symbol)
+    except DataFetchError as exc:
+        logger.warning("Engine 1 | AV unavailable (%s) — switching to yfinance fallback", exc)
+        return _fetch_yfinance_fallback(symbol)
+
+
+def _fetch_av(symbol: str) -> dict:
+    """Alpha Vantage data path — extracted so fetch_raw can fall back cleanly."""
     fh_key = _get_fh_key()
 
     # ── 1. Company overview ─────────────────────────────────────────────────
