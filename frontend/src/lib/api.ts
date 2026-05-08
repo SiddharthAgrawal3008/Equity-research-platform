@@ -50,6 +50,47 @@ export async function fetchResearch(
   return mapPipelineToCompanyData(ctx);
 }
 
+// ── Chat API ──────────────────────────────────────────────────────────────────
+
+export interface ChatResponse {
+  reply: string;
+  tool_used: string | null;
+  ticker_analyzed: string | null;
+  has_analysis: boolean;
+}
+
+export async function sendChatMessage(
+  message: string,
+  history: Array<{ role: string; content: string }>,
+): Promise<ChatResponse> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 180_000);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, history }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      throw new Error("Chat request timed out after 3 min.");
+    }
+    throw new Error(`Cannot reach backend at ${BASE_URL}.`);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Chat failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
 // ── Mapper ───────────────────────────────────────────────────────────────────
 // Converts the backend pipeline context (5-engine data bus) → CompanyData
 // Fields the backend doesn't yet produce (description, change, eps, etc.)
@@ -212,6 +253,9 @@ function mapPipelineToCompanyData(ctx: Record<string, unknown>): CompanyData {
     bearCase: "",
   };
 
+  const meta2 = (ctx.metadata ?? {}) as Record<string, unknown>;
+  const generatedAt = String(meta2.completed_at ?? meta2.started_at ?? new Date().toISOString());
+
   return {
     ticker,
     name,
@@ -219,7 +263,7 @@ function mapPipelineToCompanyData(ctx: Record<string, unknown>): CompanyData {
     industry,
     description: `${name} operates in the ${sector} sector.`,
     price,
-    change: 0, // live price change not yet in backend
+    change: 0,
     marketCap,
     rating,
     intrinsicValue,
@@ -233,5 +277,6 @@ function mapPipelineToCompanyData(ctx: Record<string, unknown>): CompanyData {
     risk: { level: riskLevel, beta, sharpe, maxDrawdown, var95, altmanZ, debtToEquity, interestCoverage, currentRatio },
     sentiment: { score: sentimentScore, yoyShift, keywords, redFlags },
     memo,
+    generatedAt,
   };
 }

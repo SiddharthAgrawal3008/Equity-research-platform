@@ -36,6 +36,7 @@ from backend.engines.shared_config import (
     TV_CRITICAL_THRESHOLD,
     DCF_EXTREME_HIGH,
     DCF_EXTREME_LOW,
+    RELATIVE_DIVERGENCE_MAX,
     SENSITIVITY_WACC_STEP,
     SENSITIVITY_WACC_POINTS,
     SENSITIVITY_TGR_STEP,
@@ -691,7 +692,23 @@ def compute_relative(fd: dict, warnings: list[str]) -> dict:
 
     # ── Summary ────────────────────────────────────────────────────
 
-    status = "success" if len(implied_prices) >= 2 else "partial" if implied_prices else "failed"
+    divergence_ratio = None
+    if len(implied_prices) >= 2:
+        divergence_ratio = max(implied_prices) / min(implied_prices)
+        if divergence_ratio > RELATIVE_DIVERGENCE_MAX:
+            warnings.append(
+                f"Implied price spread {divergence_ratio:.1f}x exceeds {RELATIVE_DIVERGENCE_MAX:.0f}x limit: "
+                "PE/PB-implied prices are too far apart for a reliable relative valuation"
+            )
+
+    if divergence_ratio is not None and divergence_ratio > RELATIVE_DIVERGENCE_MAX:
+        status = "unreliable"
+    elif len(implied_prices) >= 2:
+        status = "success"
+    elif implied_prices:
+        status = "partial"
+    else:
+        status = "failed"
 
     return {
         "status": status,
@@ -706,6 +723,7 @@ def compute_relative(fd: dict, warnings: list[str]) -> dict:
         "pb_company": pb_company,
         "pb_peers_median": pb_median,
         "pb_implied_value": pb_implied_price if total_equity_latest > 0 else None,
+        "divergence_ratio": divergence_ratio,
         "_implied_prices": implied_prices,  # internal, used by summary builder
     }
 

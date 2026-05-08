@@ -27,6 +27,7 @@ from backend.engines.shared_config import (
     CONFIDENCE_THRESHOLDS,
     TV_WARNING_THRESHOLD,
     TV_CRITICAL_THRESHOLD,
+    DCF_EXTREME_HIGH,
 )
 from backend.engines.engine_2.modules import (
     prepare_fd,
@@ -86,6 +87,7 @@ def _failed_relative(reason: str) -> dict:
         "pe_implied_value": None,
         "pb_company": None,
         "pb_peers_median": None,
+        "divergence_ratio": None,
         "_implied_prices": [],
         "_error": reason,
     }
@@ -340,8 +342,10 @@ class ValuationEngine(BaseEngine):
 
         # ── Valuation Stance ───────────────────────────────────────
 
+        rel_status = relative.get("status", "failed")
         verdict = self._determine_verdict(
-            upside, dcf_price, rel_mid, current_price, dcf_ok, rel_ok, warnings
+            upside, dcf_price, rel_mid, current_price,
+            dcf_ok, rel_ok, rel_status, len(implied_prices), warnings
         )
 
         # ── Confidence ─────────────────────────────────────────────
@@ -371,9 +375,22 @@ class ValuationEngine(BaseEngine):
         current_price: float,
         dcf_ok: bool,
         rel_ok: bool,
+        rel_status: str,
+        implied_count: int,
         warnings: list[str],
     ) -> str:
-        """Classify as Undervalued / Fairly Valued / Overvalued."""
+        """Classify as Undervalued / Fairly Valued / Overvalued / Unreliable / Insufficient Data."""
+
+        # Fix 3: No DCF + contradictory or single-point relative → not enough to make a call
+        if not dcf_ok and (rel_status == "unreliable" or implied_count <= 1):
+            return "Insufficient Data"
+
+        # Fix 2: No DCF + extreme relative-only upside → flag as unreliable
+        if not dcf_ok and upside > DCF_EXTREME_HIGH:
+            warnings.append(
+                f"Extreme upside ({upside:.0%}) on relative-only valuation: treating as unreliable"
+            )
+            return "Unreliable"
 
         # Relative upside for cross-check
         if rel_ok and rel_mid and current_price > 0:
