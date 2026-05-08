@@ -1,53 +1,24 @@
-import type { CompanyData, Rating, RiskLevel } from "./mockData";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
-export const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-
-// Quick reachability check — 6 s timeout, returns true/false
-export async function pingBackend(): Promise<boolean> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6_000);
-  try {
-    const res = await fetch(`${BASE_URL}/health`, { signal: controller.signal });
-    return res.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timeout);
-  }
+export interface PipelineRequest {
+  ticker: string;
+  session_id?: string;
+  user_id?: string;
 }
 
-// ── Fetch ────────────────────────────────────────────────────────────────────
+export async function runPipeline(req: PipelineRequest): Promise<any> {
+  const res = await fetch(`${API_URL}/pipeline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
 
-export async function fetchResearch(
-  ticker: string,
-  financialOverride?: Record<string, unknown>,
-): Promise<CompanyData> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 180_000);
-
-  let res: Response;
-  try {
-    res = await fetch(`${BASE_URL}/api/pipeline`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ticker: ticker.toUpperCase(),
-        ...(financialOverride ? { financial_override: financialOverride } : {}),
-      }),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if ((err as Error).name === "AbortError") {
-      throw new Error(`Pipeline timed out after 3 min — the backend may be overloaded. Try again.`);
-    }
-    throw new Error(`Cannot reach backend at ${BASE_URL}. Verify VITE_API_BASE_URL is set correctly.`);
-  } finally {
-    clearTimeout(timeout);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Pipeline request failed" }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
   }
 
-  if (!res.ok) throw new Error(`Backend returned ${res.status} for ${ticker}`);
-  const ctx = await res.json();
-  return mapPipelineToCompanyData(ctx);
+  return res.json();
 }
 
 // ── Chat API ──────────────────────────────────────────────────────────────────
@@ -189,69 +160,17 @@ function mapPipelineToCompanyData(ctx: Record<string, unknown>): CompanyData {
           ),
         );
 
-  // ── Monte Carlo distribution ────────────────────────────────────────
-  // Backend doesn't expose raw MC distribution yet — derive bell curve
-  // from valuation_range {low, mid, high}.
-  const mcMid = Number(valRange.mid ?? intrinsicValue);
-  const mcSpan = Math.abs(Number(valRange.high ?? mcMid * 1.2) - mcMid) || mcMid * 0.2;
-  const monteCarlo = Array.from({ length: 25 }, (_, i) => {
-    const x = mcMid - mcSpan + (i * (mcSpan * 2)) / 24;
-    const z = (x - mcMid) / (mcSpan / 2.5);
-    return { v: +x.toFixed(1), freq: +(Math.exp(-(z * z) / 2) * 100).toFixed(1) };
+export async function sendChat(req: ChatRequest): Promise<{ answer: string; model: string }> {
+  const res = await fetch(`${API_URL}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
   });
 
-  // ── Risk ────────────────────────────────────────────────────────────
-  const beta = Number(betaObj.value ?? 1);
-  const sharpe = Number(mktRisk.sharpe_ratio ?? 0);
-  const maxDrawdown = Number(mktRisk.max_drawdown ?? 0);
-  const var95 = Number(mktRisk.var_95_daily ?? 0);
-  const altmanZ = Number(health.altman_z_score ?? 0);
-  const debtToEquity = Number(health.debt_to_equity ?? 0);
-  const interestCoverage = Number(health.interest_coverage ?? 0);
-  const currentRatio = Number(health.current_ratio ?? 0);
-
-  const riskLevel: RiskLevel =
-    beta > 1.5 || altmanZ < 1.8 ? "High" : beta < 0.8 && altmanZ > 3 ? "Low" : "Medium";
-
-  // ── Sentiment ───────────────────────────────────────────────────────
-  const nlpSentiment = (nlp.sentiment ?? {}) as Record<string, unknown>;
-  const sentimentScore = Number(nlpSentiment.overall_score ?? nlp.optimism_score ?? 50);
-  const yoyShift = Number(nlpSentiment.yoy_shift ?? 0);
-
-  type KwRaw = Record<string, unknown>;
-  const kwRaw = Array.isArray(nlp.keywords)
-    ? (nlp.keywords as KwRaw[])
-    : Array.isArray(nlpSentiment.keywords)
-    ? (nlpSentiment.keywords as KwRaw[])
-    : [];
-  const keywords = kwRaw.slice(0, 20).map((k) => ({
-    word: String(k.word ?? k.term ?? ""),
-    weight: Number(k.weight ?? k.frequency ?? 1),
-    tone: (["pos", "neg", "neu"].includes(String(k.tone)) ? k.tone : "neu") as
-      | "pos"
-      | "neg"
-      | "neu",
-  }));
-
-  const redFlagsRaw = Array.isArray(risk.red_flags)
-    ? (risk.red_flags as string[])
-    : Array.isArray(nlp.red_flags)
-    ? (nlp.red_flags as string[])
-    : [];
-  const redFlags = redFlagsRaw.map(String);
-
-  // ── Memo (Engine 5 — not yet connected) ────────────────────────────
-  void report;
-  const memo = {
-    summary: "",
-    performance: "",
-    bear: Number(valRange.low ?? intrinsicValue * 0.8),
-    base: Number(valRange.mid ?? intrinsicValue),
-    bull: Number(valRange.high ?? intrinsicValue * 1.2),
-    risks: [] as string[],
-    thesis: "",
-    bearCase: "",
-  };
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Chat request failed" }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
 
   const meta2 = (ctx.metadata ?? {}) as Record<string, unknown>;
   const generatedAt = String(meta2.completed_at ?? meta2.started_at ?? new Date().toISOString());
