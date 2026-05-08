@@ -6,8 +6,7 @@ import { ResearchReport } from "@/components/research/ResearchReport";
 import { useAuth } from "@/context/AuthContext";
 import { useMessages } from "@/hooks/useMessages";
 import { addMessage as dbAddMessage, saveResearchResult, type Message, type Session } from "@/lib/db";
-import { fetchResearch, pingBackend, BASE_URL } from "@/lib/api";
-import { useToast } from "@/hooks/use-toast";
+import { fetchResearch, sendChatMessage, pingBackend, BASE_URL } from "@/lib/api";
 import type { CompanyData } from "@/lib/mockData";
 
 interface ChatPanelProps {
@@ -18,7 +17,6 @@ interface ChatPanelProps {
 export function ChatPanel({ activeSession, onSessionCreate }: ChatPanelProps) {
   const { user } = useAuth();
   const { messages, loading } = useMessages(activeSession?.id ?? null);
-  const { toast } = useToast();
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [pendingTicker, setPendingTicker] = useState<string | null>(null);
@@ -35,47 +33,55 @@ export function ChatPanel({ activeSession, onSessionCreate }: ChatPanelProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const ticker = input.trim().toUpperCase();
-    if (!ticker || pending || !user) return;
+    const text = input.trim();
+    if (!text || pending || !user) return;
     setInput("");
     setPending(true);
-    setPendingTicker(ticker);
+    setPendingTicker(null);
 
     try {
       let sessionId = activeSession?.id ?? null;
       if (!sessionId) {
-        const newSession = await onSessionCreate(ticker);
+        const newSession = await onSessionCreate(text.slice(0, 60));
         sessionId = newSession.id;
       }
 
-      await dbAddMessage(sessionId, user.id, "user", ticker, "text");
+      await dbAddMessage(sessionId, user.id, "user", text, "text");
 
-      let data: CompanyData;
+      const chatHistory = messages
+        .filter((m) => m.type === "text" || m.type === "chat")
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      let chatReply: Awaited<ReturnType<typeof sendChatMessage>>;
       try {
-        data = await fetchResearch(ticker);
+        chatReply = await sendChatMessage(text, chatHistory);
       } catch (err) {
-        const errMsg = String(err);
-        try {
-          await dbAddMessage(sessionId, user.id, "assistant", errMsg, "error");
-        } catch {
-          // DB write failed — show toast so user still sees the error
-          toast({ variant: "destructive", title: "Research failed", description: errMsg });
-        }
+        await dbAddMessage(sessionId, user.id, "assistant", String(err), "error");
         return;
       }
 
-      await dbAddMessage(sessionId, user.id, "assistant", JSON.stringify(data), "research", { ticker });
-      try {
-        await saveResearchResult(sessionId, user.id, ticker, data);
-      } catch {
-        // Non-critical — result is already shown to user
-      }
-    } catch (err) {
-      toast({
-        variant: "destructive",
-        title: "Something went wrong",
-        description: String(err),
+      await dbAddMessage(sessionId, user.id, "assistant", chatReply.reply, "chat", {
+        tool_used: chatReply.tool_used,
+        ticker_analyzed: chatReply.ticker_analyzed,
       });
+
+      if (chatReply.has_analysis && chatReply.ticker_analyzed) {
+        setPendingTicker(chatReply.ticker_analyzed);
+        try {
+          const data = await fetchResearch(chatReply.ticker_analyzed);
+          await dbAddMessage(
+            sessionId,
+            user.id,
+            "assistant",
+            JSON.stringify(data),
+            "research",
+            { ticker: chatReply.ticker_analyzed },
+          );
+          await saveResearchResult(sessionId, user.id, chatReply.ticker_analyzed, data);
+        } catch {
+          // Non-fatal — the chat summary already gives the user the key info
+        }
+      }
     } finally {
       setPending(false);
       setPendingTicker(null);
@@ -96,7 +102,7 @@ export function ChatPanel({ activeSession, onSessionCreate }: ChatPanelProps) {
             {messages.map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
             ))}
-            {pending && pendingTicker && <PendingBubble ticker={pendingTicker} />}
+            {pending && <PendingBubble ticker={pendingTicker} />}
             <div ref={bottomRef} />
           </div>
         )}
@@ -107,7 +113,7 @@ export function ChatPanel({ activeSession, onSessionCreate }: ChatPanelProps) {
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Enter a ticker (e.g. AAPL, TSLA)…"
+            placeholder="Ask anything or enter a ticker to analyze…"
             disabled={pending}
             className="flex-1"
           />
@@ -180,18 +186,11 @@ function EmptyState({
   );
 }
 
-function PendingBubble({ ticker }: { ticker: string }) {
+function PendingBubble({ ticker }: { ticker: string | null }) {
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <div className="rounded-2xl bg-primary px-4 py-2 text-sm text-primary-foreground">
-          {ticker}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Analyzing {ticker} — this may take up to 2 minutes…
-      </div>
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      {ticker ? `Analyzing ${ticker} — this may take up to 2 minutes…` : "Thinking…"}
     </div>
   );
 }
@@ -203,6 +202,14 @@ function MessageBubble({ message }: { message: Message }) {
         <div className="max-w-[80%] rounded-2xl bg-primary px-4 py-2 text-sm text-primary-foreground">
           {message.content}
         </div>
+      </div>
+    );
+  }
+
+  if (message.type === "chat") {
+    return (
+      <div className="max-w-[80%] rounded-2xl bg-secondary px-4 py-3 text-sm text-secondary-foreground whitespace-pre-wrap">
+        {message.content}
       </div>
     );
   }
